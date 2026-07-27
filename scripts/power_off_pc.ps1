@@ -21,6 +21,7 @@ $WattEntity = "sensor.smart_plug_power"
 $ThresholdW = 5
 $SshTarget = if ($env:PC_SSH_TARGET) { $env:PC_SSH_TARGET } else { "target-pc" }
 $ShutdownWaitSeconds = 300
+$LowPowerConfirmations = 4
 
 $Headers = @{
   Authorization = "Bearer $Token"
@@ -33,6 +34,17 @@ function Log($Text) {
 
 function Get-HaState($EntityId) {
   Invoke-RestMethod -Headers $Headers -Uri "$HaUrl/api/states/$EntityId"
+}
+
+function Get-Watt {
+  $State = (Get-HaState $WattEntity).state
+  [double]$Watt = 0
+
+  if (-not [double]::TryParse($State, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$Watt)) {
+    throw "Invalid power sensor state: $State"
+  }
+
+  $Watt
 }
 
 function Set-Plug($State) {
@@ -55,7 +67,7 @@ try {
   Log "Reading plug state: $PlugEntity"
   $Plug = Get-HaState $PlugEntity
   Log "Reading power sensor: $WattEntity"
-  $Watt = [double](Get-HaState $WattEntity).state
+  $Watt = Get-Watt
   Log "Plug=$($Plug.state), Power=$Watt W"
 
   if ($Plug.state -eq "off") {
@@ -64,6 +76,11 @@ try {
   }
 
   if ($Watt -ge $ThresholdW) {
+    if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
+      Log "SSH command was not found"
+      exit
+    }
+
     Log "Decision: PC appears to be running. Sending shutdown over SSH to $SshTarget."
     & ssh $SshTarget "shutdown /s /t 0"
 
@@ -74,19 +91,27 @@ try {
 
     Log "SSH shutdown sent. Waiting for power to drop below $ThresholdW W."
     $Deadline = (Get-Date).AddSeconds($ShutdownWaitSeconds)
+    $LowPowerCount = 0
 
     while ((Get-Date) -lt $Deadline) {
       Start-Sleep -Seconds 5
-      $Watt = [double](Get-HaState $WattEntity).state
+      $Watt = Get-Watt
       Log "Power=$Watt W"
 
       if ($Watt -lt $ThresholdW) {
-        Log "Power is below $ThresholdW W."
-        break
+        $LowPowerCount++
+        Log "Low power confirmation $LowPowerCount/$LowPowerConfirmations."
+
+        if ($LowPowerCount -ge $LowPowerConfirmations) {
+          Log "Power stayed below $ThresholdW W."
+          break
+        }
+      } else {
+        $LowPowerCount = 0
       }
     }
 
-    if ($Watt -ge $ThresholdW) {
+    if ($LowPowerCount -lt $LowPowerConfirmations) {
       Log "Timed out waiting for shutdown. Not cutting power."
       exit
     }

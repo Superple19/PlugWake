@@ -22,6 +22,7 @@ $ThresholdW = 5
 $RdpHost = "target-pc"
 $RdpPort = 3389
 $RdpWaitSeconds = 180
+$LowPowerConfirmations = 3
 
 $Headers = @{
   Authorization = "Bearer $Token"
@@ -34,6 +35,17 @@ function Log($Text) {
 
 function Get-HaState($EntityId) {
   Invoke-RestMethod -Headers $Headers -Uri "$HaUrl/api/states/$EntityId"
+}
+
+function Get-Watt {
+  $State = (Get-HaState $WattEntity).state
+  [double]$Watt = 0
+
+  if (-not [double]::TryParse($State, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$Watt)) {
+    throw "Invalid power sensor state: $State"
+  }
+
+  $Watt
 }
 
 function Test-HaConnection {
@@ -71,24 +83,23 @@ function Start-Rdp {
     return
   }
 
-  Log "Waiting for RDP: $RdpHost`:$RdpPort"
+  Log "Waiting for $RdpHost to come online."
   $Deadline = (Get-Date).AddSeconds($RdpWaitSeconds)
   $Attempt = 1
 
   while ((Get-Date) -lt $Deadline) {
     if (Test-TcpPort $RdpHost $RdpPort 3000) {
-      Log "RDP is reachable. Opening mstsc."
+      Log "$RdpHost is online. Opening RDP."
       Start-Process "mstsc.exe" -ArgumentList "/v:$RdpHost", "/f"
       return
     }
 
-    Log "RDP not reachable yet. Retrying in 5 seconds. Attempt $Attempt."
+    Log "$RdpHost is not ready yet. Retrying in 5 seconds. Attempt $Attempt."
     $Attempt++
     Start-Sleep -Seconds 5
   }
 
-  Log "RDP did not become reachable within $RdpWaitSeconds seconds"
-  Show-Message "PC power action finished, but RDP is not reachable yet."
+  Log "$RdpHost did not come online within $RdpWaitSeconds seconds"
 }
 
 function Test-TailscaleConnection {
@@ -146,7 +157,7 @@ try {
   Log "Reading plug state: $PlugEntity"
   $Plug = Get-HaState $PlugEntity
   Log "Reading power sensor: $WattEntity"
-  $Watt = [double](Get-HaState $WattEntity).state
+  $Watt = Get-Watt
   Log "Plug=$($Plug.state), Power=$Watt W"
 
   if ($Plug.state -eq "off") {
@@ -164,24 +175,45 @@ try {
     exit
   }
 
-  Log "Decision: plug is on but power is below $ThresholdW W. Waiting 30 seconds."
-  Start-Sleep -Seconds 30
-  $Watt = [double](Get-HaState $WattEntity).state
-  Log "Power after wait=$Watt W"
+  Log "Decision: plug is on but power is below $ThresholdW W. Watching for sustained low power."
 
-  if ($Watt -lt $ThresholdW) {
-    Log "Decision: still below $ThresholdW W, so power cycling plug."
+  if (Test-TcpPort $RdpHost $RdpPort 3000) {
+    Log "$RdpHost is online despite low power. Treating PC as already on."
+    Start-Rdp
+    Start-Sleep -Seconds 3
+    exit
+  }
+
+  $LowPowerCount = 1
+  Log "Low power confirmation $LowPowerCount/$LowPowerConfirmations."
+
+  while ($LowPowerCount -lt $LowPowerConfirmations) {
+    Start-Sleep -Seconds 5
+    $Watt = Get-Watt
+    Log "Power=$Watt W"
+
+    if ($Watt -lt $ThresholdW) {
+      $LowPowerCount++
+      Log "Low power confirmation $LowPowerCount/$LowPowerConfirmations."
+    } else {
+      $LowPowerCount = 0
+      Log "Power recovered. PC is already on."
+      break
+    }
+  }
+
+  if ($LowPowerCount -ge $LowPowerConfirmations) {
+    Log "Decision: power stayed below $ThresholdW W, so power cycling plug."
     Set-Plug "off"
     Start-Sleep -Seconds 3
     Set-Plug "on"
     Start-Rdp
   } else {
-    Log "Decision: power rose to $Watt W, so PC is already on."
     Start-Rdp
   }
 } catch {
   Log "Error: $($_.Exception.Message)"
-  if ($_.Exception.Response.StatusCode.value__ -eq 401) {
+  if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 401) {
     Log "Home Assistant authentication failed. Check the access token."
   } else {
     Log "Failed to check power state"

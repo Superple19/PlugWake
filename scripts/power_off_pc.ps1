@@ -1,4 +1,4 @@
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $EnvFile = Join-Path $ScriptDir ".env"
 
 if (Test-Path $EnvFile) {
@@ -27,10 +27,6 @@ $Headers = @{
   "Content-Type" = "application/json"
 }
 
-function Show-Message($Text) {
-  (New-Object -ComObject WScript.Shell).Popup($Text, 5, "PC Power", 64) | Out-Null
-}
-
 function Log($Text) {
   Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $Text"
 }
@@ -53,7 +49,6 @@ function Set-Plug($State) {
 try {
   if ([string]::IsNullOrWhiteSpace($Token)) {
     Log "Home Assistant token is not configured"
-    Show-Message "Set HA_TOKEN in .env."
     exit
   }
 
@@ -65,7 +60,6 @@ try {
 
   if ($Plug.state -eq "off") {
     Log "Decision: plug is already off."
-    Show-Message "PC plug is already off."
     exit
   }
 
@@ -75,7 +69,6 @@ try {
 
     if ($LASTEXITCODE -ne 0) {
       Log "SSH shutdown failed"
-      Show-Message "SSH shutdown failed. Plug was not turned off."
       exit
     }
 
@@ -95,15 +88,13 @@ try {
 
     if ($Watt -ge $ThresholdW) {
       Log "Timed out waiting for shutdown. Not cutting power."
-      Show-Message "Windows shutdown did not finish. Plug was not turned off."
       exit
     }
   }
 
   Log "Decision: power is below $ThresholdW W, so turning plug off."
   Set-Plug "off"
-  Show-Message "PC plug has been turned off."
 } catch {
   Log "Error: $($_.Exception.Message)"
-  Show-Message "Failed to turn off PC plug."
+  Log "Failed to turn off PC plug."
 }

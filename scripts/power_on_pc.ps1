@@ -1,4 +1,4 @@
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $EnvFile = Join-Path $ScriptDir ".env"
 
 if (Test-Path $EnvFile) {
@@ -26,10 +26,6 @@ $RdpWaitSeconds = 180
 $Headers = @{
   Authorization = "Bearer $Token"
   "Content-Type" = "application/json"
-}
-
-function Show-Message($Text) {
-  (New-Object -ComObject WScript.Shell).Popup($Text, 5, "PC Power", 64) | Out-Null
 }
 
 function Log($Text) {
@@ -67,6 +63,14 @@ function Test-TcpPort($HostName, $Port, $TimeoutMs) {
 }
 
 function Start-Rdp {
+  $ExistingRdp = Get-CimInstance Win32_Process -Filter "name = 'mstsc.exe'" |
+    Where-Object { $_.CommandLine -like "*$RdpHost*" }
+
+  if ($ExistingRdp) {
+    Log "RDP is already open for $RdpHost."
+    return
+  }
+
   Log "Waiting for RDP: $RdpHost`:$RdpPort"
   $Deadline = (Get-Date).AddSeconds($RdpWaitSeconds)
   $Attempt = 1
@@ -115,7 +119,6 @@ function Set-Plug($State) {
 try {
   if ([string]::IsNullOrWhiteSpace($Token)) {
     Log "Home Assistant token is not configured"
-    Show-Message "Set HA_TOKEN in .env."
     exit
   }
 
@@ -124,7 +127,6 @@ try {
 
   if ($TailscaleOk -eq $false) {
     Log "Tailscale is not connected"
-    Show-Message "Tailscale is not connected on this laptop."
     Start-Sleep -Seconds 3
     exit
   }
@@ -137,7 +139,6 @@ try {
 
   if (-not (Test-HaConnection)) {
     Log "Home Assistant is not reachable"
-    Show-Message "Cannot reach Home Assistant at $HaUrl."
     Start-Sleep -Seconds 3
     exit
   }
@@ -151,7 +152,6 @@ try {
   if ($Plug.state -eq "off") {
     Log "Decision: plug is off, so turning it on."
     Set-Plug "on"
-    Show-Message "PC power has been turned on"
     Start-Rdp
     Start-Sleep -Seconds 3
     exit
@@ -159,7 +159,6 @@ try {
 
   if ($Watt -ge $ThresholdW) {
     Log "Decision: power is at or above $ThresholdW W, so PC is already on."
-    Show-Message "PC is already on ($Watt W)"
     Start-Rdp
     Start-Sleep -Seconds 3
     exit
@@ -175,19 +174,17 @@ try {
     Set-Plug "off"
     Start-Sleep -Seconds 3
     Set-Plug "on"
-    Show-Message "PC boot has been started"
     Start-Rdp
   } else {
     Log "Decision: power rose to $Watt W, so PC is already on."
-    Show-Message "PC is already on ($Watt W)"
     Start-Rdp
   }
 } catch {
   Log "Error: $($_.Exception.Message)"
   if ($_.Exception.Response.StatusCode.value__ -eq 401) {
-    Show-Message "Home Assistant authentication failed. Check the access token."
+    Log "Home Assistant authentication failed. Check the access token."
   } else {
-    Show-Message "Failed to check power state"
+    Log "Failed to check power state"
   }
 }
 

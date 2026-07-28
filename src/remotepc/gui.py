@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -12,28 +11,12 @@ from datetime import datetime
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QApplication, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget, QInputDialog
 
-from .actions import remote_off, remote_on
+from .actions import remote_off, remote_on, remote_reboot
 from .config import FIELDS, ROOT, load_config, load_env, save_env
 
 
 def timestamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
-
-
-class CommandWorker(QThread):
-    line = Signal(str)
-    done = Signal(int)
-
-    def __init__(self, args: list[str]) -> None:
-        super().__init__()
-        self.args = args
-
-    def run(self) -> None:
-        process = subprocess.Popen(self.args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
-        assert process.stdout is not None
-        for line in process.stdout:
-            self.line.emit(line.rstrip())
-        self.done.emit(process.wait())
 
 
 class ActionWorker(QThread):
@@ -90,16 +73,15 @@ class MainWindow(QMainWindow):
         off_button.clicked.connect(lambda: self.run_action("Remote Off", remote_off, needs_password=True))
         buttons.addWidget(off_button)
 
-        boot_button = QPushButton("Boot Linux Once")
-        boot_button.clicked.connect(lambda: self.run_command("Boot Linux Once", ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "scripts" / "boot_linux_once.ps1")]))
-        buttons.addWidget(boot_button)
+        reboot_button = QPushButton("Reboot Now")
+        reboot_button.clicked.connect(lambda: self.run_action("Reboot Now", remote_reboot, needs_password=True))
+        buttons.addWidget(reboot_button)
 
         tests = QHBoxLayout()
-        for label, fn in [("Test Home Assistant", self.test_ha), ("Test RDP Host", self.test_rdp), ("Show Boot Entries", self.show_boot_entries)]:
+        for label, fn in [("Test Home Assistant", self.test_ha), ("Test RDP Host", self.test_rdp)]:
             button = QPushButton(label)
             button.clicked.connect(fn)
             tests.addWidget(button)
-
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         layout.addLayout(buttons)
@@ -141,17 +123,6 @@ class MainWindow(QMainWindow):
     def save_settings(self) -> None:
         save_env({key: field.text().strip() for key, field in self.inputs.items()})
         self.append_log("Saved .env")
-
-    def run_command(self, label: str, args: list[str]) -> None:
-        if self.worker and self.worker.isRunning():
-            QMessageBox.information(self, "RemotePC", "A command is already running.")
-            return
-
-        self.append_log(f"Running {label}")
-        self.worker = CommandWorker(args)
-        self.worker.line.connect(self.append_log)
-        self.worker.done.connect(lambda code: self.append_log(f"{label} exited with {code}"))
-        self.worker.start()
 
     def run_action(self, label: str, action: Callable, needs_password: bool = False) -> None:
         if self.worker and self.worker.isRunning():
@@ -202,16 +173,6 @@ class MainWindow(QMainWindow):
                 self.append_log(f"{host}:3389 is reachable.")
         except OSError as exc:
             self.append_log(f"{host}:3389 is not reachable: {exc}")
-
-    def show_boot_entries(self) -> None:
-        try:
-            result = subprocess.run(["bcdedit", "/enum", "firmware"], cwd=ROOT, text=True, capture_output=True, encoding="utf-8", errors="replace")
-        except OSError as exc:
-            self.append_log(f"Failed to run bcdedit: {exc}")
-            return
-        output = result.stdout.strip() or result.stderr.strip()
-        self.append_log(output if output else f"bcdedit exited with {result.returncode}")
-
 
 def main() -> None:
     os.chdir(ROOT)

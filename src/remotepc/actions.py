@@ -241,7 +241,30 @@ def parse_ssh_target(target: str) -> tuple[str, str]:
 
 
 def ssh_shutdown(config: Config, log: Log, password_prompt: PasswordPrompt | None) -> bool:
-    username, host = parse_ssh_target(config.ssh_target)
+    result = run_ssh_command(config.ssh_target, "shutdown /s /t 0", log, password_prompt)
+    return result == 0
+
+
+def run_ssh_command(target: str, command: str, log: Log, password_prompt: PasswordPrompt | None) -> int | None:
+    client = connect_ssh(target, log, password_prompt)
+    if client is None:
+        return None
+
+    try:
+        _stdin, stdout, stderr = client.exec_command(command)
+        output = stdout.read().decode("utf-8", errors="replace").strip()
+        error = stderr.read().decode("utf-8", errors="replace").strip()
+        if output:
+            log(output)
+        if error:
+            log(error)
+        return stdout.channel.recv_exit_status()
+    finally:
+        client.close()
+
+
+def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -> paramiko.SSHClient | None:
+    username, host = parse_ssh_target(target)
     client = paramiko.SSHClient()
     client.load_system_host_keys()
     client.set_missing_host_key_policy(paramiko.WarningPolicy())
@@ -251,17 +274,17 @@ def ssh_shutdown(config: Config, log: Log, password_prompt: PasswordPrompt | Non
     except (paramiko.AuthenticationException, paramiko.SSHException) as exc:
         if "No authentication methods available" not in str(exc) and not isinstance(exc, paramiko.AuthenticationException):
             log(f"SSH connection failed: {exc}")
-            return False
+            return None
 
         if password_prompt is None:
             log("SSH authentication failed. Configure key login or use the GUI password prompt.")
-            return False
+            return None
 
         for attempt in range(1, 4):
-            password = password_prompt(config.ssh_target)
+            password = password_prompt(target)
             if not password:
                 log("SSH password was not provided.")
-                return False
+                return None
 
             try:
                 client.connect(
@@ -277,20 +300,20 @@ def ssh_shutdown(config: Config, log: Log, password_prompt: PasswordPrompt | Non
             except paramiko.AuthenticationException:
                 log(f"SSH password authentication failed. Attempt {attempt}/3.")
                 if attempt == 3:
-                    return False
+                    return None
             except Exception as exc:
                 log(f"SSH password authentication failed: {exc}")
-                return False
+                return None
     except Exception as exc:
         log(f"SSH connection failed: {exc}")
-        return False
+        return None
 
-    try:
-        _stdin, stdout, stderr = client.exec_command("shutdown /s /t 0")
-        exit_code = stdout.channel.recv_exit_status()
-        error = stderr.read().decode("utf-8", errors="replace").strip()
-        if error:
-            log(error)
-        return exit_code == 0
-    finally:
-        client.close()
+    return client
+
+
+def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
+    require_config(config, ["ssh_target"])
+    log(f"Rebooting remote PC over SSH: {config.ssh_target}")
+    code = run_ssh_command(config.ssh_target, "shutdown /r /t 0", log, password_prompt)
+    if code != 0:
+        raise ActionFailed("Failed to reboot remote PC")

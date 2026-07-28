@@ -2,7 +2,7 @@
 
 ## Goal
 
-Keep the current Windows `.bat` shortcuts working, then add a cross-platform Python GUI for users who want one control panel on Windows or Linux.
+Keep the current Windows `.bat` shortcuts working, then add a Python GUI for users who want one control panel.
 
 ## Current Stable Layer
 
@@ -10,7 +10,6 @@ Keep these as the simple Windows path:
 
 - `power_on_pc.bat`
 - `power_off_pc.bat`
-- `boot_linux_once.bat`
 - `setup_shortcuts.bat`
 - `scripts/*.ps1`
 
@@ -22,11 +21,10 @@ Minimum actions:
 
 - Remote On
 - Remote Off
-- Boot Linux Once
+- Reboot Now
 - Save settings
 - Test Home Assistant
 - Test RDP host
-- Show boot entries
 
 ## Cross-Platform Split
 
@@ -39,14 +37,14 @@ Shared Python logic:
 - set plug on/off
 - check TCP ports
 - run SSH shutdown
+- run SSH reboot
 - stream logs to GUI
 
 OS-specific logic:
 
 - Windows RDP: `mstsc /v:<host> /f`
-- Linux RDP: `xfreerdp /v:<host> /f`
-- Windows boot once: `bcdedit /bootsequence <id>`
-- Linux boot once: defer until needed
+- Linux RDP support: defer until needed
+- OS switching: do not support by default
 
 ## Non-Goals For Now
 

@@ -28,6 +28,12 @@ Or run:
 launch_gui.bat
 ```
 
+If `uv` is not installed, run:
+
+```bat
+install_uv.bat
+```
+
 ## Python CLI
 
 The Python path currently targets Windows-to-Windows control.
@@ -45,9 +51,9 @@ The CLI does not prompt for SSH passwords. Use SSH key login for non-GUI runs.
 
 - `power_on_pc.bat`: Windows shortcut-friendly launcher for Remote On
 - `power_off_pc.bat`: Windows shortcut-friendly launcher for Remote Off
-- `boot_linux_once.bat`: Windows launcher for one-time Linux boot
 - `setup_shortcuts.bat`: creates desktop shortcuts
 - `launch_gui.bat`: optional PySide6 GUI launcher
+- `install_uv.bat`: optional uv installer using winget
 - `scripts/`: PowerShell implementation
 - `src/remotepc/`: Python CLI and GUI implementation
 - `assets/icons/`: shortcut `.ico` files

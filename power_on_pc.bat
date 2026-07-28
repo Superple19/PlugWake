@@ -1,5 +1,15 @@
 @echo off
 title Power On PC
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\power_on_pc.ps1"
+cd /d "%~dp0"
+where uv >nul 2>nul
+if errorlevel 1 (
+  echo uv was not found.
+  echo Run install_uv.bat first, then open this launcher again.
+  echo.
+  pause
+  exit /b 1
+)
+
+uv run remotepc-cli on
 echo.
 pause

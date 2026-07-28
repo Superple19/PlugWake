@@ -66,6 +66,20 @@ def tcp_open(host: str, port: int, timeout: float = 3) -> bool:
         return False
 
 
+def test_home_assistant(config: Config, log: Log) -> None:
+    require_config(config, ["ha_url", "ha_token"])
+    HomeAssistant(config).request("/api/")
+    log("Home Assistant is reachable.")
+
+
+def test_rdp_host(config: Config, log: Log) -> None:
+    require_config(config, ["rdp_host"])
+    if tcp_open(config.rdp_host, 3389, timeout=5):
+        log(f"{config.rdp_host}:3389 is reachable.")
+    else:
+        log(f"{config.rdp_host}:3389 is not reachable within 5 seconds.")
+
+
 def tailscale_connected() -> bool | None:
     if not shutil.which("tailscale"):
         return None
@@ -118,13 +132,13 @@ def remote_on(config: Config, log: Log) -> None:
 
     tailscale = tailscale_connected()
     if tailscale is False:
-        log("Tailscale is not connected")
+        log("Tailscale is not connected.")
         return
     if tailscale is None:
         log("Tailscale CLI was not found. Skipping direct Tailscale check.")
 
     if not tcp_open(url_host(config.ha_url), url_port(config.ha_url)):
-        log("Home Assistant is not reachable")
+        log("Home Assistant is not reachable.")
         return
 
     ha = HomeAssistant(config)
@@ -189,7 +203,6 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
     if watt >= config.power_threshold_w:
         log(f"Decision: PC appears to be running. Sending shutdown over SSH to {config.ssh_target}.")
         if not ssh_shutdown(config, log, password_prompt):
-            log("SSH shutdown failed")
             raise ActionFailed("SSH shutdown failed")
 
         log(f"SSH shutdown sent. Waiting for power to drop below {config.power_threshold_w:g} W.")
@@ -277,7 +290,7 @@ def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -
             return None
 
         if password_prompt is None:
-            log("SSH authentication failed. Configure key login or use the GUI password prompt.")
+            log("SSH authentication failed. Password prompt is unavailable for this command.")
             return None
 
         for attempt in range(1, 4):

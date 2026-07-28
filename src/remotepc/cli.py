@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
+import subprocess
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
-from .actions import remote_off, remote_on
+from .actions import remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
 from .config import load_config
 
 
@@ -13,15 +18,70 @@ def log(text: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="remotepc")
-    parser.add_argument("command", choices=["on", "off"])
+    parser.add_argument("command", choices=["on", "off", "reboot", "test-ha", "test-rdp", "setup-shortcuts"])
     args = parser.parse_args()
 
     config = load_config()
-    if args.command == "on":
-        remote_on(config, log)
-    else:
-        remote_off(config, log)
+    try:
+        if args.command == "setup-shortcuts":
+            setup_shortcuts()
+        elif args.command == "on":
+            remote_on(config, log)
+        elif args.command == "off":
+            remote_off(config, log, prompt_password)
+        elif args.command == "reboot":
+            remote_reboot(config, log, prompt_password)
+        elif args.command == "test-ha":
+            test_home_assistant(config, log)
+        elif args.command == "test-rdp":
+            test_rdp_host(config, log)
+    except Exception as exc:
+        log(f"Error: {exc}")
+        raise SystemExit(1) from None
+
+
+def prompt_password(target: str) -> str:
+    return getpass.getpass(f"Password for {target}: ")
+
+
+def setup_shortcuts() -> None:
+    if os.name != "nt":
+        raise RuntimeError("Desktop shortcuts are only supported on Windows")
+
+    root = Path(__file__).resolve().parents[2]
+    shortcuts = [
+        ("Remote On", root / "power_on_pc.bat", root / "assets" / "icons" / "power-on-v2.ico"),
+        ("Remote Off", root / "power_off_pc.bat", root / "assets" / "icons" / "power-off-v2.ico"),
+    ]
+    script = [
+        'Set shell = CreateObject("WScript.Shell")',
+        'desktop = shell.SpecialFolders("Desktop")',
+    ]
+    for name, target, icon in shortcuts:
+        shortcut = f'{name}.lnk'
+        script.extend(
+            [
+                f'Set link = shell.CreateShortcut(desktop & "\\{vbs(shortcut)}")',
+                f'link.TargetPath = "{vbs(str(target))}"',
+                f'link.WorkingDirectory = "{vbs(str(root))}"',
+                f'link.IconLocation = "{vbs(str(icon))},0"',
+                "link.Save",
+                f'WScript.Echo "Created: " & desktop & "\\{vbs(shortcut)}"',
+            ]
+        )
+
+    with tempfile.NamedTemporaryFile("w", suffix=".vbs", delete=False, encoding="utf-16") as file:
+        file.write("\n".join(script))
+        path = file.name
+    try:
+        subprocess.run(["cscript.exe", "//nologo", path], check=True)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def vbs(value: str) -> str:
+    return value.replace('"', '""')
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

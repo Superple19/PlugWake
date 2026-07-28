@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import os
-import socket
 import sys
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QApplication, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget, QInputDialog
 
-from .actions import remote_off, remote_on, remote_reboot
+from .actions import remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
 from .config import FIELDS, ROOT, load_config, load_env, save_env
 
 
@@ -78,7 +75,10 @@ class MainWindow(QMainWindow):
         buttons.addWidget(reboot_button)
 
         tests = QHBoxLayout()
-        for label, fn in [("Test Home Assistant", self.test_ha), ("Test RDP Host", self.test_rdp)]:
+        for label, fn in [
+            ("Test Home Assistant", lambda: self.run_action("Test Home Assistant", test_home_assistant)),
+            ("Test RDP Host", lambda: self.run_action("Test RDP Host", test_rdp_host)),
+        ]:
             button = QPushButton(label)
             button.clicked.connect(fn)
             tests.addWidget(button)
@@ -145,34 +145,6 @@ class MainWindow(QMainWindow):
         assert isinstance(self.worker, ActionWorker)
         password, ok = QInputDialog.getText(self, "SSH Password", f"Password for {target}", QLineEdit.EchoMode.Password)
         self.worker.password = password if ok else ""
-
-    def test_ha(self) -> None:
-        values = load_env()
-        url = values.get("HA_URL", "").rstrip("/")
-        token = values.get("HA_TOKEN", "")
-        if not url or not token:
-            self.append_log("Set HA_URL and HA_TOKEN first.")
-            return
-
-        request = urllib.request.Request(f"{url}/api/", headers={"Authorization": f"Bearer {token}"})
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                self.append_log(f"Home Assistant OK: HTTP {response.status}")
-        except urllib.error.HTTPError as exc:
-            self.append_log(f"Home Assistant HTTP error: {exc.code}")
-        except OSError as exc:
-            self.append_log(f"Home Assistant connection failed: {exc}")
-
-    def test_rdp(self) -> None:
-        host = load_env().get("RDP_HOST", "").strip()
-        if not host:
-            self.append_log("Set RDP_HOST first.")
-            return
-        try:
-            with socket.create_connection((host, 3389), timeout=5):
-                self.append_log(f"{host}:3389 is reachable.")
-        except OSError as exc:
-            self.append_log(f"{host}:3389 is not reachable: {exc}")
 
 def main() -> None:
     os.chdir(ROOT)

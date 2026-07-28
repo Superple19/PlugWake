@@ -369,3 +369,11 @@ def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | No
     code = run_ssh_command(config, reboot_command(config), log, password_prompt)
     if code != 0:
         raise ActionFailed("Failed to reboot remote PC")
+
+
+def remote_hard_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
+    log("Starting hard reboot.")
+    remote_off(config, log, password_prompt)
+    log("Turning plug back on.")
+    HomeAssistant(config).set_plug("on")
+    open_rdp(config, log)

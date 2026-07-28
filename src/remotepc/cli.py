@@ -8,7 +8,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from .actions import remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
+from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
 from .config import load_config
 
 
@@ -18,7 +18,7 @@ def log(text: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="remotepc")
-    parser.add_argument("command", choices=["on", "off", "reboot", "test-ha", "test-rdp", "setup-shortcuts"])
+    parser.add_argument("command", choices=["on", "off", "reboot", "hard-reboot", "test-ha", "test-rdp", "setup-shortcuts"])
     args = parser.parse_args()
 
     config = load_config()
@@ -31,6 +31,8 @@ def main() -> None:
             remote_off(config, log, prompt_password)
         elif args.command == "reboot":
             remote_reboot(config, log, prompt_password)
+        elif args.command == "hard-reboot":
+            remote_hard_reboot(config, log, prompt_password)
         elif args.command == "test-ha":
             test_home_assistant(config, log)
         elif args.command == "test-rdp":

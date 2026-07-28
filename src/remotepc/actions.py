@@ -4,6 +4,7 @@ import json
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -118,13 +119,28 @@ def open_rdp(config: Config, log: Log) -> None:
     attempt = 1
     while time.monotonic() < deadline:
         if tcp_open(config.rdp_host, 3389):
+            command = rdp_command(config.rdp_host)
+            if command is None:
+                log("No supported RDP client was found. Install xfreerdp on Linux.")
+                return
             log(f"{config.rdp_host} is online. Opening RDP.")
-            subprocess.Popen(["mstsc.exe", f"/v:{config.rdp_host}", "/f"])
+            subprocess.Popen(command)
             return
         log(f"{config.rdp_host} is not ready yet. Retrying in 5 seconds. Attempt {attempt}.")
         attempt += 1
         time.sleep(5)
     log(f"{config.rdp_host} did not come online within {config.rdp_wait_seconds} seconds")
+
+
+def rdp_command(host: str) -> list[str] | None:
+    if sys.platform == "win32":
+        return ["mstsc.exe", f"/v:{host}", "/f"]
+
+    if sys.platform.startswith("linux"):
+        for command in ["xfreerdp", "xfreerdp3"]:
+            if shutil.which(command):
+                return [command, f"/v:{host}", "/f", "/network:auto"]
+    return None
 
 
 def remote_on(config: Config, log: Log) -> None:

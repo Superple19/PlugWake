@@ -10,16 +10,27 @@ Tailscale is recommended for private networking and MagicDNS, but not required. 
 - Open RDP when the target PC becomes reachable.
 - Shut down Windows over SSH, then turn the plug off only after repeated low-power readings.
 - Reboot the target PC over SSH from the GUI or CLI.
-- Use simple `.bat` launchers, the Python CLI, or the optional GUI.
+- Use simple Windows `.bat` launchers, Linux `.sh` launchers, the Python CLI, or the optional GUI.
 
 Remote OS switching is intentionally not supported by default.
+
+## Requirements
+
+- Home Assistant with a controllable smart plug and power sensor.
+- SSH access to the target PC for shutdown and reboot.
+- For Windows RDP hosts, Windows Pro, Enterprise, or Education is required. Windows Home cannot act as a built-in Remote Desktop host.
+- Linux clients need FreeRDP installed for RDP launch:
+  - Ubuntu 24.04: `sudo apt install freerdp3-x11`
+  - Ubuntu 26.04 / Debian testing: `sudo apt install freerdp-x11`
+  - Fedora: `sudo dnf install freerdp`
+  - Arch / Manjaro: `sudo pacman -S freerdp`
 
 ## Setup
 
 1. Run `install_uv.bat` if `uv` is not installed.
 2. Copy `.env.example` to `.env`.
 3. Fill in the Home Assistant token, entity IDs, RDP host, and SSH target.
-4. Run `setup_shortcuts.bat` to create desktop shortcuts.
+4. On Windows, run `setup_shortcuts.bat` to create desktop shortcuts. On Linux, run `bash setup_desktop_entries.sh`.
 5. Use `Remote On` or `Remote Off` from the desktop.
 
 `.env` is intentionally ignored by Git.
@@ -47,7 +58,7 @@ install_uv.bat
 
 ## Python CLI
 
-The Python path currently targets Windows-to-Windows control.
+The Python path supports Windows clients with `mstsc.exe` and Linux clients with `xfreerdp`.
 
 ```bat
 uv run remotepc-cli on
@@ -57,6 +68,8 @@ uv run remotepc-cli test-ha
 uv run remotepc-cli test-rdp
 uv run remotepc-cli setup-shortcuts
 ```
+
+`setup-shortcuts` creates Windows desktop shortcuts. Use `bash setup_desktop_entries.sh` on Linux.
 
 For `Remote Off` and `Reboot Now`, Paramiko tries key/agent authentication first, then prompts for a password when needed. Passwords are retried up to three times and are never saved.
 
@@ -75,6 +88,10 @@ For `Remote Off` and `Reboot Now`, Paramiko tries key/agent authentication first
 - `setup_shortcuts.bat`: creates desktop shortcuts
 - `launch_gui.bat`: optional PySide6 GUI launcher
 - `install_uv.bat`: optional uv installer using winget
+- `remote_on.sh`: Linux launcher for Remote On
+- `remote_off.sh`: Linux launcher for Remote Off
+- `setup_desktop_entries.sh`: creates Linux desktop entries
+- `launch_gui.sh`: Linux PySide6 GUI launcher
 - `src/remotepc/`: Python CLI and GUI implementation
 - `assets/icons/`: shortcut `.ico` files
 - `assets/source-icons/`: source PNG icons

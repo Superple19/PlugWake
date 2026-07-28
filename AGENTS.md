@@ -11,6 +11,7 @@ Core responsibilities:
 - Open RDP when the target PC becomes reachable.
 - Shut down or reboot the target PC over SSH.
 - Keep `.bat` launchers usable as Windows entry points.
+- Keep `.sh` launchers usable as Linux entry points.
 - Provide an optional `uv` + PySide6 GUI.
 
 ## Safety Rules
@@ -95,6 +96,7 @@ fix: harden remote shutdown flow
 ## File Layout
 
 - Root `.bat` files are user-facing Windows launchers.
+- Root `.sh` files are user-facing Linux launchers.
 - `src/remotepc/` contains Python CLI and GUI code.
 - `assets/icons/` contains committed `.ico` shortcut assets.
 - `assets/source-icons/` contains source icon images.

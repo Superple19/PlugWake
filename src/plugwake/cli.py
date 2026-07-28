@@ -18,7 +18,9 @@ def log(text: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="plugwake")
-    parser.add_argument("command", choices=["on", "off", "reboot", "hard-reboot", "test-ha", "test-rdp", "setup-shortcuts"])
+    parser.add_argument(
+        "command", choices=["on", "off", "reboot", "hard-reboot", "test-ha", "test-rdp", "setup-shortcuts"]
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -53,15 +55,15 @@ def setup_shortcuts() -> None:
     root = Path(__file__).resolve().parents[2]
     shortcuts = [
         ("PlugWake", root / "launch_gui.bat", root / "assets" / "icons" / "plugwake.ico"),
-        ("Remote On", root / "power_on_pc.bat", root / "assets" / "icons" / "remote-on.ico"),
-        ("Remote Off", root / "power_off_pc.bat", root / "assets" / "icons" / "remote-off.ico"),
+        ("Remote On", root / "remote_on.bat", root / "assets" / "icons" / "remote-on.ico"),
+        ("Remote Off", root / "remote_off.bat", root / "assets" / "icons" / "remote-off.ico"),
     ]
     script = [
         'Set shell = CreateObject("WScript.Shell")',
         'desktop = shell.SpecialFolders("Desktop")',
     ]
     for name, target, icon in shortcuts:
-        shortcut = f'{name}.lnk'
+        shortcut = f"{name}.lnk"
         script.extend(
             [
                 f'Set link = shell.CreateShortcut(desktop & "\\{vbs(shortcut)}")',

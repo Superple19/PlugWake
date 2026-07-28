@@ -53,14 +53,34 @@ Tailscale is optional, but it is a convenient way to keep Home Assistant and the
 
 ## Setup
 
-1. Install `uv`.
-   - Windows: run `install_uv.bat`
-   - Linux/macOS: follow the official `uv` installer at <https://docs.astral.sh/uv/getting-started/installation/>
-2. Copy `.env.example` to `.env`.
-3. Fill in your Home Assistant URL, token, entity IDs, RDP host, SSH target, and target OS.
-4. Create desktop launchers if wanted:
+1. Clone the repository.
+
+```bash
+git clone https://github.com/Superple19/PlugWake.git
+cd PlugWake
+```
+
+2. Install `uv` if needed, then sync dependencies.
+
+Windows:
+
+```bat
+install_uv.bat
+uv sync
+```
+
+Linux/macOS:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
+```
+
+3. Copy `.env.example` to `.env`.
+4. Fill in your Home Assistant URL, token, entity IDs, RDP host, SSH target, and target OS.
+5. Create desktop launchers if wanted:
    - Windows: run `setup_shortcuts.bat`
-   - Linux: run `bash setup_desktop_entries.sh`
+   - Linux: run `bash setup_shortcuts.sh`
 
 `.env` is ignored by Git.
 
@@ -117,6 +137,13 @@ uv run plugwake-cli test-ha
 uv run plugwake-cli test-rdp
 ```
 
+Development checks:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+```
+
 `reboot` sends an OS reboot over SSH. `hard-reboot` shuts the OS down, waits for low power, power-cycles the plug, then opens RDP.
 
 Windows shortcut setup:
@@ -128,7 +155,7 @@ uv run plugwake-cli setup-shortcuts
 Linux shortcut setup:
 
 ```bash
-bash setup_desktop_entries.sh
+bash setup_shortcuts.sh
 ```
 
 ## Safety
@@ -142,18 +169,17 @@ bash setup_desktop_entries.sh
 
 ## Files
 
-- `power_on_pc.bat`: Windows launcher for Remote On
-- `power_off_pc.bat`: Windows launcher for Remote Off
+- `remote_on.bat`: Windows launcher for Remote On
+- `remote_off.bat`: Windows launcher for Remote Off
 - `setup_shortcuts.bat`: Windows shortcut setup
 - `launch_gui.bat`: Windows GUI launcher
 - `install_uv.bat`: Windows `uv` installer helper
 - `remote_on.sh`: Linux launcher for Remote On
 - `remote_off.sh`: Linux launcher for Remote Off
-- `setup_desktop_entries.sh`: Linux desktop entry setup
+- `setup_shortcuts.sh`: Linux desktop entry setup
 - `launch_gui.sh`: Linux GUI launcher
 - `src/plugwake/`: Python CLI and GUI code
 - `assets/`: shortcut icons and source icons
-- `docs/`: planning notes
 
 ## License
 

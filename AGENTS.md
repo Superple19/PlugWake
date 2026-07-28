@@ -2,39 +2,38 @@
 
 ## Project Overview
 
-PlugWake is a small Windows-first remote power control tool.
+PlugWake is a small remote power control tool for personal PCs.
 
 Core responsibilities:
 
 - Control a Home Assistant smart plug through the Home Assistant REST API.
-- Use a power sensor to avoid unsafe plug cutoffs.
+- Use a Home Assistant power sensor before making plug power decisions.
 - Open RDP when the target PC becomes reachable.
 - Shut down or reboot the target PC over SSH.
-- Keep `.bat` launchers usable as Windows entry points.
-- Keep `.sh` launchers usable as Linux entry points.
-- Provide an optional `uv` + PySide6 GUI.
+- Keep root `.bat` launchers usable as Windows entry points.
+- Keep root `.sh` launchers usable as Linux entry points.
+- Provide a `uv` + PySide6 GUI and CLI.
 
 ## Safety Rules
 
-- Never commit `.env` or any real Home Assistant token.
-- Never store SSH passwords in files, docs, logs, or config examples.
+- Never commit `.env`, Home Assistant tokens, SSH passwords, hostnames, Tailnet names, local IPs, or real entity IDs.
+- Never store SSH passwords in files, docs, logs, examples, or config defaults.
 - Do not add automatic OS switching or one-time Linux boot controls by default.
 - Do not cut smart plug power while wattage is above the configured threshold.
-- Remote shutdown must happen through OS shutdown first, then repeated low-power confirmation.
+- Remote Off must shut down through the OS first, then require repeated low-power confirmation before plug cutoff.
 - If Home Assistant, SSH, RDP, or the power sensor fails, prefer doing nothing over cutting power.
 
 ## Public Defaults
 
-Use public-safe placeholder values in committed files:
+Use only public-safe placeholder values in committed files:
 
 - `HA_URL=http://ha.example.local:8123`
+- `HA_TOKEN=PASTE_LONG_LIVED_ACCESS_TOKEN_HERE`
 - `PLUG_ENTITY=switch.smart_plug`
 - `WATT_ENTITY=sensor.smart_plug_power`
 - `RDP_HOST=target-pc`
 - `PC_SSH_TARGET=user@target-pc`
 - `TARGET_OS=windows`
-
-Do not commit personal values such as hostnames, usernames, Tailnet names, or Home Assistant entity IDs.
 
 ## Validation
 
@@ -42,31 +41,39 @@ Before committing code changes, run the smallest relevant checks:
 
 ```bat
 .venv\Scripts\python.exe -m py_compile src\plugwake\config.py src\plugwake\actions.py src\plugwake\cli.py src\plugwake\gui.py
+uv run ruff check .
+uv run ruff format --check .
+uv run plugwake-cli --help
 ```
 
 Before public commits, check for leaked local values:
 
 ```powershell
 Get-ChildItem -Recurse -File -Force |
-  Where-Object { $_.FullName -notmatch '\\.git\\|\\.venv\\|\\.env$' } |
-  Select-String -Pattern 'real-home-assistant-host|real-target-host|real-ssh-user|real_entity_id'
+  Where-Object { $_.FullName -notmatch '\\.git\\|\\.venv\\|\\.env(\\..*)?$|__pycache__|\\dist\\|\\build\\' } |
+  Select-String -Pattern 'real-home-assistant-host|real-target-host|real-ssh-user|real_entity_id|Bearer\\s+[A-Za-z0-9_\\.-]+'
 ```
+
+For local review, also search any known private hostnames, usernames, entity IDs, and Tailnet IPs from the current machine. Do not write those private values into committed docs.
 
 ## Dependency Management
 
-- Use `uv`, not `pip`, for project dependency changes.
+- Use `uv`, not `pip`, for dependency changes.
 - Keep Python pinned through `.python-version`.
-- Keep GUI dependencies in `pyproject.toml` and `uv.lock`.
-- Do not vendor `uv.exe` or Python runtimes into the repo.
+- Keep dependencies in `pyproject.toml` and `uv.lock`.
+- Do not vendor `uv.exe`, Python runtimes, or generated build artifacts.
 
 Useful commands:
 
 ```bat
 uv sync
-uv run python -m plugwake.gui
+uv run ruff check .
+uv run ruff format .
+uv run plugwake
 uv run plugwake-cli on
 uv run plugwake-cli off
 uv run plugwake-cli reboot
+uv run plugwake-cli hard-reboot
 uv run plugwake-cli test-ha
 uv run plugwake-cli test-rdp
 uv run plugwake-cli setup-shortcuts
@@ -96,11 +103,13 @@ fix: harden remote shutdown flow
 
 ## File Layout
 
-- Root `.bat` files are user-facing Windows launchers.
-- Root `.sh` files are user-facing Linux launchers.
-- `src/plugwake/` contains Python CLI and GUI code.
-- `assets/icons/` contains committed `.ico` shortcut assets.
-- `assets/source-icons/` contains source icon images.
-- `docs/` contains planning notes.
+- `remote_on.bat` and `remote_on.sh`: user-facing Remote On launchers.
+- `remote_off.bat` and `remote_off.sh`: user-facing Remote Off launchers.
+- `launch_gui.bat` and `launch_gui.sh`: user-facing GUI launchers.
+- `setup_shortcuts.bat` and `setup_shortcuts.sh`: desktop shortcut setup.
+- `install_uv.bat`: Windows `uv` installer helper.
+- `src/plugwake/`: Python CLI and GUI code.
+- `assets/icons/`: generated shortcut icons (`.ico` for Windows, `.png` for Linux/PySide).
+- `assets/source-icons/`: source icon images documented in `NOTICE.md`.
 
 Keep root files minimal and user-facing.

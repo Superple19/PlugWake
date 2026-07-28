@@ -7,7 +7,23 @@ from datetime import datetime
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget, QInputDialog
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
 from .config import FIELDS, ROOT, load_config, load_env, save_env
@@ -183,7 +199,9 @@ class MainWindow(QMainWindow):
 
         soft_reboot = QPushButton("Soft Reboot")
         soft_reboot.clicked.connect(
-            lambda: self.run_action("Soft Reboot", remote_reboot, needs_password=True, confirm="Reboot the target PC over SSH?")
+            lambda: self.run_action(
+                "Soft Reboot", remote_reboot, needs_password=True, confirm="Reboot the target PC over SSH?"
+            )
         )
         reboot_group.addWidget(soft_reboot)
 
@@ -284,7 +302,12 @@ class MainWindow(QMainWindow):
         self.append_log("Saved .env")
 
     def reset_defaults(self) -> None:
-        if QMessageBox.question(self, "Reset Defaults", "Reset settings fields to example defaults? This will not save .env yet.") != QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self, "Reset Defaults", "Reset settings fields to example defaults? This will not save .env yet."
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
             return
         for key, field in self.inputs.items():
             if isinstance(field, QComboBox):
@@ -298,7 +321,9 @@ class MainWindow(QMainWindow):
             return field.currentText()
         return field.text().strip()
 
-    def run_action(self, label: str, action: Callable, needs_password: bool = False, confirm: str | None = None) -> None:
+    def run_action(
+        self, label: str, action: Callable, needs_password: bool = False, confirm: str | None = None
+    ) -> None:
         if self.worker and self.worker.isRunning():
             QMessageBox.information(self, "PlugWake", "A command is already running.")
             return
@@ -326,6 +351,7 @@ class MainWindow(QMainWindow):
         assert isinstance(self.worker, ActionWorker)
         password, ok = QInputDialog.getText(self, "SSH Password", f"Password for {target}", QLineEdit.EchoMode.Password)
         self.worker.password = password if ok else ""
+
 
 def main() -> None:
     os.chdir(ROOT)

@@ -14,7 +14,6 @@ import paramiko
 
 from .config import Config
 
-
 Log = Callable[[str], None]
 PasswordPrompt = Callable[[str], str | None]
 
@@ -94,12 +93,16 @@ def tailscale_connected() -> bool | None:
 def rdp_is_open(host: str) -> bool:
     if not shutil.which("powershell"):
         return False
+    command = (
+        "Get-CimInstance Win32_Process -Filter \"name = 'mstsc.exe'\" "
+        f"| Where-Object {{ $_.CommandLine -like '*{host}*' }}"
+    )
     result = subprocess.run(
         [
             "powershell",
             "-NoProfile",
             "-Command",
-            f"Get-CimInstance Win32_Process -Filter \"name = 'mstsc.exe'\" | Where-Object {{ $_.CommandLine -like '*{host}*' }}",
+            command,
         ],
         text=True,
         capture_output=True,
@@ -315,7 +318,9 @@ def run_ssh_command(config: Config, command: str, log: Log, password_prompt: Pas
         client.close()
 
 
-def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -> tuple[paramiko.SSHClient | None, str | None]:
+def connect_ssh(
+    target: str, log: Log, password_prompt: PasswordPrompt | None
+) -> tuple[paramiko.SSHClient | None, str | None]:
     username, host = parse_ssh_target(target)
     client = paramiko.SSHClient()
     client.load_system_host_keys()
@@ -324,7 +329,9 @@ def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -
     try:
         client.connect(hostname=host, username=username or None, timeout=10, auth_timeout=15)
     except (paramiko.AuthenticationException, paramiko.SSHException) as exc:
-        if "No authentication methods available" not in str(exc) and not isinstance(exc, paramiko.AuthenticationException):
+        if "No authentication methods available" not in str(exc) and not isinstance(
+            exc, paramiko.AuthenticationException
+        ):
             log(f"SSH connection failed: {exc}")
             return None, None
 

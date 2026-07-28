@@ -37,6 +37,10 @@ uv run remotepc-cli on
 uv run remotepc-cli off
 ```
 
+For `Remote Off`, the GUI uses Paramiko for SSH. It tries key/agent authentication first, then opens a password prompt when needed. Passwords are retried up to three times and are never saved.
+
+The CLI does not prompt for SSH passwords. Use SSH key login for non-GUI runs.
+
 ## Files
 
 - `power_on_pc.bat`: Windows shortcut-friendly launcher for Remote On

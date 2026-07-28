@@ -10,7 +10,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QApplication, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget, QInputDialog
 
 from .actions import remote_off, remote_on
 from .config import FIELDS, ROOT, load_config, load_env, save_env
@@ -39,10 +39,12 @@ class CommandWorker(QThread):
 class ActionWorker(QThread):
     line = Signal(str)
     done = Signal(int)
+    password_requested = Signal(str)
 
     def __init__(self, action: Callable[[Callable[[str], None]], None]) -> None:
         super().__init__()
         self.action = action
+        self.password: str | None = None
 
     def run(self) -> None:
         try:
@@ -52,6 +54,13 @@ class ActionWorker(QThread):
             self.done.emit(1)
             return
         self.done.emit(0)
+
+    def prompt_password(self, target: str) -> str | None:
+        self.password = None
+        self.password_requested.emit(target)
+        while self.password is None:
+            self.msleep(50)
+        return self.password
 
 
 class MainWindow(QMainWindow):
@@ -78,7 +87,7 @@ class MainWindow(QMainWindow):
         buttons.addWidget(on_button)
 
         off_button = QPushButton("Remote Off")
-        off_button.clicked.connect(lambda: self.run_action("Remote Off", remote_off))
+        off_button.clicked.connect(lambda: self.run_action("Remote Off", remote_off, needs_password=True))
         buttons.addWidget(off_button)
 
         boot_button = QPushButton("Boot Linux Once")
@@ -144,17 +153,27 @@ class MainWindow(QMainWindow):
         self.worker.done.connect(lambda code: self.append_log(f"{label} exited with {code}"))
         self.worker.start()
 
-    def run_action(self, label: str, action: Callable) -> None:
+    def run_action(self, label: str, action: Callable, needs_password: bool = False) -> None:
         if self.worker and self.worker.isRunning():
             QMessageBox.information(self, "RemotePC", "A command is already running.")
             return
 
         config = load_config()
         self.append_log(f"Running {label}")
-        self.worker = ActionWorker(lambda log: action(config, log))
+        if needs_password:
+            worker = ActionWorker(lambda log: action(config, log, worker.prompt_password))
+            worker.password_requested.connect(self.ask_password)
+            self.worker = worker
+        else:
+            self.worker = ActionWorker(lambda log: action(config, log))
         self.worker.line.connect(self.append_log)
         self.worker.done.connect(lambda code: self.append_log(f"{label} exited with {code}"))
         self.worker.start()
+
+    def ask_password(self, target: str) -> None:
+        assert isinstance(self.worker, ActionWorker)
+        password, ok = QInputDialog.getText(self, "SSH Password", f"Password for {target}", QLineEdit.EchoMode.Password)
+        self.worker.password = password if ok else ""
 
     def test_ha(self) -> None:
         values = load_env()

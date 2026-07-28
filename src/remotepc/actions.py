@@ -9,10 +9,13 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 
+import paramiko
+
 from .config import Config
 
 
 Log = Callable[[str], None]
+PasswordPrompt = Callable[[str], str | None]
 
 
 class HomeAssistant:
@@ -49,6 +52,10 @@ class HomeAssistant:
     def set_plug(self, state: str) -> None:
         service = "turn_on" if state == "on" else "turn_off"
         self.request(f"/api/services/switch/{service}", method="POST", body={"entity_id": self.config.plug_entity})
+
+
+class ActionFailed(RuntimeError):
+    pass
 
 
 def tcp_open(host: str, port: int, timeout: float = 3) -> bool:
@@ -165,7 +172,7 @@ def remote_on(config: Config, log: Log) -> None:
     open_rdp(config, log)
 
 
-def remote_off(config: Config, log: Log) -> None:
+def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "ssh_target"])
 
     ha = HomeAssistant(config)
@@ -180,14 +187,10 @@ def remote_off(config: Config, log: Log) -> None:
         return
 
     if watt >= config.power_threshold_w:
-        if not shutil.which("ssh"):
-            log("SSH command was not found")
-            return
         log(f"Decision: PC appears to be running. Sending shutdown over SSH to {config.ssh_target}.")
-        result = subprocess.run(["ssh", config.ssh_target, "shutdown /s /t 0"])
-        if result.returncode != 0:
+        if not ssh_shutdown(config, log, password_prompt):
             log("SSH shutdown failed")
-            return
+            raise ActionFailed("SSH shutdown failed")
 
         log(f"SSH shutdown sent. Waiting for power to drop below {config.power_threshold_w:g} W.")
         deadline = time.monotonic() + 300
@@ -228,3 +231,66 @@ def require_config(config: Config, names: list[str]) -> None:
     missing = [name.upper() for name in names if not str(getattr(config, name)).strip()]
     if missing:
         raise RuntimeError(f"Missing required settings: {', '.join(missing)}")
+
+
+def parse_ssh_target(target: str) -> tuple[str, str]:
+    if "@" not in target:
+        return "", target
+    username, host = target.split("@", 1)
+    return username, host
+
+
+def ssh_shutdown(config: Config, log: Log, password_prompt: PasswordPrompt | None) -> bool:
+    username, host = parse_ssh_target(config.ssh_target)
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+
+    try:
+        client.connect(hostname=host, username=username or None, timeout=10, auth_timeout=15)
+    except (paramiko.AuthenticationException, paramiko.SSHException) as exc:
+        if "No authentication methods available" not in str(exc) and not isinstance(exc, paramiko.AuthenticationException):
+            log(f"SSH connection failed: {exc}")
+            return False
+
+        if password_prompt is None:
+            log("SSH authentication failed. Configure key login or use the GUI password prompt.")
+            return False
+
+        for attempt in range(1, 4):
+            password = password_prompt(config.ssh_target)
+            if not password:
+                log("SSH password was not provided.")
+                return False
+
+            try:
+                client.connect(
+                    hostname=host,
+                    username=username or None,
+                    password=password,
+                    timeout=10,
+                    auth_timeout=15,
+                    look_for_keys=False,
+                    allow_agent=False,
+                )
+                break
+            except paramiko.AuthenticationException:
+                log(f"SSH password authentication failed. Attempt {attempt}/3.")
+                if attempt == 3:
+                    return False
+            except Exception as exc:
+                log(f"SSH password authentication failed: {exc}")
+                return False
+    except Exception as exc:
+        log(f"SSH connection failed: {exc}")
+        return False
+
+    try:
+        _stdin, stdout, stderr = client.exec_command("shutdown /s /t 0")
+        exit_code = stdout.channel.recv_exit_status()
+        error = stderr.read().decode("utf-8", errors="replace").strip()
+        if error:
+            log(error)
+        return exit_code == 0
+    finally:
+        client.close()

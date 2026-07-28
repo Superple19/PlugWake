@@ -10,6 +10,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-uv run remotepc-cli on
+uv run plugwake-cli on
 echo.
 pause

@@ -1,6 +1,6 @@
-# RemotePC
+# PlugWake
 
-RemotePC powers on a remote PC through a Home Assistant smart plug, waits for RDP, and shuts the PC down safely before cutting plug power.
+PlugWake powers on a remote PC through a Home Assistant smart plug, waits for RDP, and shuts the PC down safely before cutting plug power.
 
 It is built for small personal setups: one target PC, one smart plug, Home Assistant, SSH, and RDP. Tailscale or another private network is recommended, but not required.
 
@@ -40,7 +40,7 @@ sudo pacman -S freerdp
 
 ## Network
 
-RemotePC talks to Home Assistant over its REST API and uses SSH/RDP to reach the target PC. Home Assistant must already be set up with a smart plug switch entity and a power sensor entity.
+PlugWake talks to Home Assistant over its REST API and uses SSH/RDP to reach the target PC. Home Assistant must already be set up with a smart plug switch entity and a power sensor entity.
 
 - Home Assistant: <https://www.home-assistant.io/>
 - Home Assistant REST API: <https://developers.home-assistant.io/docs/api/rest/>
@@ -95,26 +95,26 @@ The SSH user must be allowed to run those commands with sudo.
 
 Desktop launchers:
 
+- `PlugWake`
 - `Remote On`
 - `Remote Off`
-- `RemotePC`
 
 GUI:
 
 ```bash
 uv sync
-uv run remotepc
+uv run plugwake
 ```
 
 CLI:
 
 ```bash
-uv run remotepc-cli on
-uv run remotepc-cli off
-uv run remotepc-cli reboot
-uv run remotepc-cli hard-reboot
-uv run remotepc-cli test-ha
-uv run remotepc-cli test-rdp
+uv run plugwake-cli on
+uv run plugwake-cli off
+uv run plugwake-cli reboot
+uv run plugwake-cli hard-reboot
+uv run plugwake-cli test-ha
+uv run plugwake-cli test-rdp
 ```
 
 `reboot` sends an OS reboot over SSH. `hard-reboot` shuts the OS down, waits for low power, power-cycles the plug, then opens RDP.
@@ -122,7 +122,7 @@ uv run remotepc-cli test-rdp
 Windows shortcut setup:
 
 ```bash
-uv run remotepc-cli setup-shortcuts
+uv run plugwake-cli setup-shortcuts
 ```
 
 Linux shortcut setup:
@@ -138,7 +138,7 @@ bash setup_desktop_entries.sh
 - Failed SSH shutdowns do not cut plug power.
 - Invalid or unavailable power sensor readings do not cut plug power.
 - Remote Off waits for repeated low-power readings before switching the plug off.
-- If Home Assistant, SSH, RDP, or the power sensor fails, RemotePC prefers doing nothing over cutting power.
+- If Home Assistant, SSH, RDP, or the power sensor fails, PlugWake prefers doing nothing over cutting power.
 
 ## Files
 
@@ -151,6 +151,10 @@ bash setup_desktop_entries.sh
 - `remote_off.sh`: Linux launcher for Remote Off
 - `setup_desktop_entries.sh`: Linux desktop entry setup
 - `launch_gui.sh`: Linux GUI launcher
-- `src/remotepc/`: Python CLI and GUI code
+- `src/plugwake/`: Python CLI and GUI code
 - `assets/`: shortcut icons and source icons
 - `docs/`: planning notes
+
+## License
+
+MIT. See `LICENSE` and `NOTICE.md`.

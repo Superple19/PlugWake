@@ -9,4 +9,4 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-uv run python -m remotepc.gui
+uv run python -m plugwake.gui

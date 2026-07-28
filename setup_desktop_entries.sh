@@ -13,7 +13,7 @@ cat > "$DESKTOP/Remote On.desktop" <<EOF
 Type=Application
 Name=Remote On
 Exec="$ROOT/remote_on.sh"
-Icon=$ROOT/assets/source-icons/remote-explorer-svgrepo-com.png
+Icon=$ROOT/assets/icons/remote-on.png
 Terminal=true
 Categories=Utility;
 EOF
@@ -23,21 +23,21 @@ cat > "$DESKTOP/Remote Off.desktop" <<EOF
 Type=Application
 Name=Remote Off
 Exec="$ROOT/remote_off.sh"
-Icon=$ROOT/assets/source-icons/server-off-svgrepo-com.png
+Icon=$ROOT/assets/icons/remote-off.png
 Terminal=true
 Categories=Utility;
 EOF
 
-cat > "$DESKTOP/RemotePC.desktop" <<EOF
+cat > "$DESKTOP/PlugWake.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=RemotePC
+Name=PlugWake
 Exec="$ROOT/launch_gui.sh"
-Icon=$ROOT/assets/source-icons/remote-explorer-svgrepo-com.png
+Icon=$ROOT/assets/icons/plugwake.png
 Terminal=false
 Categories=Utility;
 EOF
 
-chmod +x "$DESKTOP/Remote On.desktop" "$DESKTOP/Remote Off.desktop" "$DESKTOP/RemotePC.desktop"
+chmod +x "$DESKTOP/Remote On.desktop" "$DESKTOP/Remote Off.desktop" "$DESKTOP/PlugWake.desktop"
 
 echo "Created Linux desktop entries in $DESKTOP"

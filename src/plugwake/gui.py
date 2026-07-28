@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget, QInputDialog
 
 from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
@@ -129,7 +130,10 @@ class ActionWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("RemotePC")
+        self.setWindowTitle("PlugWake")
+        icon = ROOT / "assets" / "icons" / "plugwake.png"
+        if icon.exists():
+            self.setWindowIcon(QIcon(str(icon)))
         self.resize(780, 560)
         self.setStyleSheet(STYLE)
         self.inputs: dict[str, QLineEdit | QComboBox] = {}
@@ -296,7 +300,7 @@ class MainWindow(QMainWindow):
 
     def run_action(self, label: str, action: Callable, needs_password: bool = False, confirm: str | None = None) -> None:
         if self.worker and self.worker.isRunning():
-            QMessageBox.information(self, "RemotePC", "A command is already running.")
+            QMessageBox.information(self, "PlugWake", "A command is already running.")
             return
         if confirm and QMessageBox.question(self, label, confirm) != QMessageBox.StandardButton.Yes:
             return

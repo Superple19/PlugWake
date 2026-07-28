@@ -1,5 +1,5 @@
 @echo off
-title RemotePC GUI
+title PlugWake GUI
 cd /d "%~dp0"
 where uv >nul 2>nul
 if errorlevel 1 (
@@ -10,6 +10,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-uv run python -m remotepc.gui
+uv run python -m plugwake.gui
 echo.
 pause

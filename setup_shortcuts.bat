@@ -1,5 +1,5 @@
 @echo off
-title Setup RemotePC Shortcuts
+title Setup PlugWake Shortcuts
 cd /d "%~dp0"
 where uv >nul 2>nul
 if errorlevel 1 (
@@ -10,6 +10,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-uv run remotepc-cli setup-shortcuts
+uv run plugwake-cli setup-shortcuts
 echo.
 pause

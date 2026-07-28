@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-RemotePC is a small Windows-first remote power control tool.
+PlugWake is a small Windows-first remote power control tool.
 
 Core responsibilities:
 
@@ -41,7 +41,7 @@ Do not commit personal values such as hostnames, usernames, Tailnet names, or Ho
 Before committing code changes, run the smallest relevant checks:
 
 ```bat
-.venv\Scripts\python.exe -m py_compile src\remotepc\config.py src\remotepc\actions.py src\remotepc\cli.py src\remotepc\gui.py
+.venv\Scripts\python.exe -m py_compile src\plugwake\config.py src\plugwake\actions.py src\plugwake\cli.py src\plugwake\gui.py
 ```
 
 Before public commits, check for leaked local values:
@@ -63,13 +63,13 @@ Useful commands:
 
 ```bat
 uv sync
-uv run python -m remotepc.gui
-uv run remotepc-cli on
-uv run remotepc-cli off
-uv run remotepc-cli reboot
-uv run remotepc-cli test-ha
-uv run remotepc-cli test-rdp
-uv run remotepc-cli setup-shortcuts
+uv run python -m plugwake.gui
+uv run plugwake-cli on
+uv run plugwake-cli off
+uv run plugwake-cli reboot
+uv run plugwake-cli test-ha
+uv run plugwake-cli test-rdp
+uv run plugwake-cli setup-shortcuts
 ```
 
 ## Commit Style
@@ -98,7 +98,7 @@ fix: harden remote shutdown flow
 
 - Root `.bat` files are user-facing Windows launchers.
 - Root `.sh` files are user-facing Linux launchers.
-- `src/remotepc/` contains Python CLI and GUI code.
+- `src/plugwake/` contains Python CLI and GUI code.
 - `assets/icons/` contains committed `.ico` shortcut assets.
 - `assets/source-icons/` contains source icon images.
 - `docs/` contains planning notes.

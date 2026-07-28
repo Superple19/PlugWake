@@ -1,8 +1,8 @@
-# RemotePC Plan
+# PlugWake Plan
 
 ## Current Goal
 
-Keep RemotePC focused on safe remote Windows power control:
+Keep PlugWake focused on safe remote Windows power control:
 
 - power on through Home Assistant
 - open RDP when reachable
@@ -22,12 +22,12 @@ Python GUI and CLI:
 
 - `uv` project setup
 - PySide6 GUI
-- `remotepc-cli on`
-- `remotepc-cli off`
-- `remotepc-cli reboot`
-- `remotepc-cli test-ha`
-- `remotepc-cli test-rdp`
-- `remotepc-cli setup-shortcuts`
+- `plugwake-cli on`
+- `plugwake-cli off`
+- `plugwake-cli reboot`
+- `plugwake-cli test-ha`
+- `plugwake-cli test-rdp`
+- `plugwake-cli setup-shortcuts`
 - Paramiko SSH password prompt for SSH actions
 - Reboot Now action
 - Home Assistant and RDP tests

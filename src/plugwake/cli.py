@@ -17,7 +17,7 @@ def log(text: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="remotepc")
+    parser = argparse.ArgumentParser(prog="plugwake")
     parser.add_argument("command", choices=["on", "off", "reboot", "hard-reboot", "test-ha", "test-rdp", "setup-shortcuts"])
     args = parser.parse_args()
 
@@ -52,8 +52,9 @@ def setup_shortcuts() -> None:
 
     root = Path(__file__).resolve().parents[2]
     shortcuts = [
-        ("Remote On", root / "power_on_pc.bat", root / "assets" / "icons" / "power-on-v2.ico"),
-        ("Remote Off", root / "power_off_pc.bat", root / "assets" / "icons" / "power-off-v2.ico"),
+        ("PlugWake", root / "launch_gui.bat", root / "assets" / "icons" / "plugwake.ico"),
+        ("Remote On", root / "power_on_pc.bat", root / "assets" / "icons" / "remote-on.ico"),
+        ("Remote Off", root / "power_off_pc.bat", root / "assets" / "icons" / "remote-off.ico"),
     ]
     script = [
         'Set shell = CreateObject("WScript.Shell")',

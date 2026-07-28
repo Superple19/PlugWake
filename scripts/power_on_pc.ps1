@@ -14,15 +14,15 @@ if (Test-Path $EnvFile) {
   }
 }
 
-$HaUrl = "http://ha.example.local:8123"
+$HaUrl = $env:HA_URL
 $Token = $env:HA_TOKEN
-$PlugEntity = "switch.smart_plug"
-$WattEntity = "sensor.smart_plug_power"
-$ThresholdW = 5
-$RdpHost = "target-pc"
+$PlugEntity = $env:PLUG_ENTITY
+$WattEntity = $env:WATT_ENTITY
+$ThresholdW = if ($env:POWER_THRESHOLD_W) { [double]$env:POWER_THRESHOLD_W } else { 5 }
+$RdpHost = $env:RDP_HOST
 $RdpPort = 3389
-$RdpWaitSeconds = 180
-$LowPowerConfirmations = 3
+$RdpWaitSeconds = if ($env:RDP_WAIT_SECONDS) { [int]$env:RDP_WAIT_SECONDS } else { 180 }
+$LowPowerConfirmations = if ($env:POWER_ON_LOW_CONFIRMATIONS) { [int]$env:POWER_ON_LOW_CONFIRMATIONS } else { 3 }
 
 $Headers = @{
   Authorization = "Bearer $Token"
@@ -130,6 +130,11 @@ function Set-Plug($State) {
 try {
   if ([string]::IsNullOrWhiteSpace($Token)) {
     Log "Home Assistant token is not configured"
+    exit
+  }
+
+  if ([string]::IsNullOrWhiteSpace($HaUrl) -or [string]::IsNullOrWhiteSpace($PlugEntity) -or [string]::IsNullOrWhiteSpace($WattEntity) -or [string]::IsNullOrWhiteSpace($RdpHost)) {
+    Log "Set HA_URL, PLUG_ENTITY, WATT_ENTITY, and RDP_HOST in .env"
     exit
   }
 

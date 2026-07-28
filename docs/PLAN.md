@@ -1,50 +1,52 @@
 # RemotePC Plan
 
-## Goal
+## Current Goal
 
-Keep the current Windows `.bat` shortcuts working, then add a Python GUI for users who want one control panel.
+Keep RemotePC focused on safe remote Windows power control:
 
-## Current Stable Layer
+- power on through Home Assistant
+- open RDP when reachable
+- shut down or reboot through SSH
+- avoid unsafe smart plug cutoffs
+- keep simple `.bat` launchers, Python CLI, and optional GUI
 
-Keep these as the simple Windows path:
+## Done
+
+Stable Windows launchers:
 
 - `power_on_pc.bat`
 - `power_off_pc.bat`
 - `setup_shortcuts.bat`
-- `scripts/*.ps1`
 
-## Target GUI
+Python GUI and CLI:
 
-Use PySide6.
+- `uv` project setup
+- PySide6 GUI
+- `remotepc-cli on`
+- `remotepc-cli off`
+- `remotepc-cli reboot`
+- `remotepc-cli test-ha`
+- `remotepc-cli test-rdp`
+- `remotepc-cli setup-shortcuts`
+- Paramiko SSH password prompt for SSH actions
+- Reboot Now action
+- Home Assistant and RDP tests
 
-Minimum actions:
+Safety behavior:
 
-- Remote On
-- Remote Off
-- Reboot Now
-- Save settings
-- Test Home Assistant
-- Test RDP host
+- `.env` for local settings
+- no SSH password storage
+- no plug cutoff after SSH failure
+- repeated low-power checks before plug cutoff
+- OS switching removed from default controls
 
-## Cross-Platform Split
+## Next
 
-Shared Python logic:
+Defer until needed:
 
-- load `.env`
-- call Home Assistant API
-- read plug state
-- read watt sensor
-- set plug on/off
-- check TCP ports
-- run SSH shutdown
-- run SSH reboot
-- stream logs to GUI
-
-OS-specific logic:
-
-- Windows RDP: `mstsc /v:<host> /f`
-- Linux RDP support: defer until needed
-- OS switching: do not support by default
+- Linux client support with `xfreerdp`
+- GUI polish after real usage
+- packaging only if `uv run` becomes annoying
 
 ## Non-Goals For Now
 
@@ -54,3 +56,4 @@ OS-specific logic:
 - no multi-PC dashboard
 - no background service
 - no tray app
+- no default OS switching or one-time Linux boot controls

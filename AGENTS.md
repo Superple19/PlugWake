@@ -32,6 +32,7 @@ Use public-safe placeholder values in committed files:
 - `WATT_ENTITY=sensor.smart_plug_power`
 - `RDP_HOST=target-pc`
 - `PC_SSH_TARGET=user@target-pc`
+- `TARGET_OS=windows`
 
 Do not commit personal values such as hostnames, usernames, Tailnet names, or Home Assistant entity IDs.
 

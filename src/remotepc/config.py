@@ -14,6 +14,7 @@ FIELDS = [
     "WATT_ENTITY",
     "RDP_HOST",
     "PC_SSH_TARGET",
+    "TARGET_OS",
     "POWER_THRESHOLD_W",
     "RDP_WAIT_SECONDS",
     "POWER_ON_LOW_CONFIRMATIONS",
@@ -21,6 +22,7 @@ FIELDS = [
 ]
 
 DEFAULTS = {
+    "TARGET_OS": "windows",
     "POWER_THRESHOLD_W": "5",
     "RDP_WAIT_SECONDS": "180",
     "POWER_ON_LOW_CONFIRMATIONS": "3",
@@ -36,6 +38,7 @@ class Config:
     watt_entity: str
     rdp_host: str
     ssh_target: str
+    target_os: str
     power_threshold_w: float
     rdp_wait_seconds: int
     power_on_low_confirmations: int
@@ -72,6 +75,7 @@ def load_config() -> Config:
         watt_entity=values.get("WATT_ENTITY", ""),
         rdp_host=values.get("RDP_HOST", ""),
         ssh_target=values.get("PC_SSH_TARGET", ""),
+        target_os=values.get("TARGET_OS", "windows").strip().lower(),
         power_threshold_w=float(values.get("POWER_THRESHOLD_W", "5")),
         rdp_wait_seconds=int(values.get("RDP_WAIT_SECONDS", "180")),
         power_on_low_confirmations=int(values.get("POWER_ON_LOW_CONFIRMATIONS", "3")),

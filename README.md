@@ -29,7 +29,7 @@ Remote OS switching is intentionally not supported by default.
 
 1. Run `install_uv.bat` if `uv` is not installed.
 2. Copy `.env.example` to `.env`.
-3. Fill in the Home Assistant token, entity IDs, RDP host, and SSH target.
+3. Fill in the Home Assistant token, entity IDs, RDP host, SSH target, and target OS.
 4. On Windows, run `setup_shortcuts.bat` to create desktop shortcuts. On Linux, run `bash setup_desktop_entries.sh`.
 5. Use `Remote On` or `Remote Off` from the desktop.
 
@@ -72,6 +72,8 @@ uv run remotepc-cli setup-shortcuts
 `setup-shortcuts` creates Windows desktop shortcuts. Use `bash setup_desktop_entries.sh` on Linux.
 
 For `Remote Off` and `Reboot Now`, Paramiko tries key/agent authentication first, then prompts for a password when needed. Passwords are retried up to three times and are never saved.
+
+Set `TARGET_OS=windows` for Windows hosts or `TARGET_OS=linux` for Linux hosts. Linux hosts use `sudo -S systemctl poweroff` and `sudo -S systemctl reboot`, so the SSH user must be allowed to run those commands with sudo.
 
 ## Safety
 

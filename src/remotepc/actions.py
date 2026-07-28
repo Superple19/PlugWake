@@ -270,17 +270,40 @@ def parse_ssh_target(target: str) -> tuple[str, str]:
 
 
 def ssh_shutdown(config: Config, log: Log, password_prompt: PasswordPrompt | None) -> bool:
-    result = run_ssh_command(config.ssh_target, "shutdown /s /t 0", log, password_prompt)
+    result = run_ssh_command(config, shutdown_command(config), log, password_prompt)
     return result == 0
 
 
-def run_ssh_command(target: str, command: str, log: Log, password_prompt: PasswordPrompt | None) -> int | None:
-    client = connect_ssh(target, log, password_prompt)
+def shutdown_command(config: Config) -> str:
+    if config.target_os == "windows":
+        return "shutdown /s /t 0"
+    if config.target_os == "linux":
+        return "sudo -S -p '' systemctl poweroff"
+    raise RuntimeError(f"Unsupported TARGET_OS: {config.target_os}")
+
+
+def reboot_command(config: Config) -> str:
+    if config.target_os == "windows":
+        return "shutdown /r /t 0"
+    if config.target_os == "linux":
+        return "sudo -S -p '' systemctl reboot"
+    raise RuntimeError(f"Unsupported TARGET_OS: {config.target_os}")
+
+
+def run_ssh_command(config: Config, command: str, log: Log, password_prompt: PasswordPrompt | None) -> int | None:
+    client, password = connect_ssh(config.ssh_target, log, password_prompt)
     if client is None:
         return None
 
     try:
-        _stdin, stdout, stderr = client.exec_command(command)
+        stdin, stdout, stderr = client.exec_command(command)
+        if config.target_os == "linux":
+            if password is None and password_prompt is not None:
+                password = password_prompt(config.ssh_target)
+            if password:
+                stdin.write(password + "\n")
+                stdin.flush()
+            stdin.channel.shutdown_write()
         output = stdout.read().decode("utf-8", errors="replace").strip()
         error = stderr.read().decode("utf-8", errors="replace").strip()
         if output:
@@ -292,7 +315,7 @@ def run_ssh_command(target: str, command: str, log: Log, password_prompt: Passwo
         client.close()
 
 
-def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -> paramiko.SSHClient | None:
+def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -> tuple[paramiko.SSHClient | None, str | None]:
     username, host = parse_ssh_target(target)
     client = paramiko.SSHClient()
     client.load_system_host_keys()
@@ -303,17 +326,17 @@ def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -
     except (paramiko.AuthenticationException, paramiko.SSHException) as exc:
         if "No authentication methods available" not in str(exc) and not isinstance(exc, paramiko.AuthenticationException):
             log(f"SSH connection failed: {exc}")
-            return None
+            return None, None
 
         if password_prompt is None:
             log("SSH authentication failed. Password prompt is unavailable for this command.")
-            return None
+            return None, None
 
         for attempt in range(1, 4):
             password = password_prompt(target)
             if not password:
                 log("SSH password was not provided.")
-                return None
+                return None, None
 
             try:
                 client.connect(
@@ -329,20 +352,20 @@ def connect_ssh(target: str, log: Log, password_prompt: PasswordPrompt | None) -
             except paramiko.AuthenticationException:
                 log(f"SSH password authentication failed. Attempt {attempt}/3.")
                 if attempt == 3:
-                    return None
+                    return None, None
             except Exception as exc:
                 log(f"SSH password authentication failed: {exc}")
-                return None
+                return None, None
     except Exception as exc:
         log(f"SSH connection failed: {exc}")
-        return None
+        return None, None
 
-    return client
+    return client, locals().get("password")
 
 
 def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     require_config(config, ["ssh_target"])
     log(f"Rebooting remote PC over SSH: {config.ssh_target}")
-    code = run_ssh_command(config.ssh_target, "shutdown /r /t 0", log, password_prompt)
+    code = run_ssh_command(config, reboot_command(config), log, password_prompt)
     if code != 0:
         raise ActionFailed("Failed to reboot remote PC")

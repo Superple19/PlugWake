@@ -163,7 +163,7 @@ uv sync
 uv run plugwake
 ```
 
-The GUI follows the system light or dark theme and switches live when it changes. On Windows 11 22H2 or later it uses the Mica window backdrop; elsewhere it uses a solid background.
+The GUI is built with Qt Quick and the [FluentWinUI3 style](https://doc.qt.io/qt-6/qtquickcontrols-fluentwinui3.html) that ships with Qt 6.8 and later. It follows the system light or dark theme and accent color. On Windows 11 22H2 or later it uses the Mica window backdrop and renders with OpenGL so the backdrop shows through; elsewhere it uses a solid background.
 
 CLI:
 
@@ -229,6 +229,7 @@ bash setup_shortcuts.sh
 - `setup_shortcuts.sh`: Linux desktop entry setup
 - `launch_gui.sh`: Linux GUI launcher
 - `src/plugwake/`: Python CLI and GUI code
+- `src/plugwake/qml/`: Qt Quick GUI pages
 - `tests/`: pytest tests
 - `assets/`: shortcut icons and their source images
 

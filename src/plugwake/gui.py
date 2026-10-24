@@ -4,36 +4,50 @@ import os
 import sys
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (
-    QApplication,
-    QComboBox,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QInputDialog,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QMessageBox,
-    QPlainTextEdit,
-    QPushButton,
-    QScrollArea,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import Property, QObject, QThread, QUrl, Signal, Slot
+from PySide6.QtGui import QGuiApplication, QIcon
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
+from PySide6.QtQuickControls2 import QQuickStyle
 
 from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
 from .config import FIELDS, ROOT, load_config, load_env, save_env
-from .theme import apply_theme, enable_mica
+from .theme import enable_mica, follow_color_scheme, mica_supported
 
+QML_DIR = Path(__file__).with_name("qml")
 
-def timestamp() -> str:
-    return datetime.now().strftime("%H:%M:%S")
+# id: (label, action, needs_password, confirmation)
+ACTIONS: dict[str, tuple[str, Callable, bool, str]] = {
+    "on": ("Remote On", remote_on, False, ""),
+    "off": ("Remote Off", remote_off, True, "Shut down the target PC and turn the smart plug off?"),
+    "reboot": ("Soft Reboot", remote_reboot, True, "Reboot the target PC over SSH?"),
+    "hard-reboot": (
+        "Hard Reboot",
+        remote_hard_reboot,
+        True,
+        "Shut down the target PC, cut plug power, turn it back on, and open RDP?",
+    ),
+    "test-ha": ("Test Home Assistant", test_home_assistant, False, ""),
+    "test-rdp": ("Test RDP Port", test_rdp_host, False, ""),
+}
 
+SETTING_GROUPS = [
+    ("Home Assistant", ["HA_URL", "HA_TOKEN", "PLUG_ENTITY", "WATT_ENTITY"]),
+    ("Target PC", ["RDP_HOST", "PC_SSH_TARGET", "TARGET_OS"]),
+    (
+        "Power Safety",
+        [
+            "POWER_THRESHOLD_W",
+            "RDP_WAIT_SECONDS",
+            "SHUTDOWN_WAIT_SECONDS",
+            "PLUG_OFF_SECONDS",
+            "POWER_ON_LOW_CONFIRMATIONS",
+            "POWER_OFF_LOW_CONFIRMATIONS",
+        ],
+    ),
+]
 
 PLACEHOLDERS = {
     "HA_URL": "http://ha.example.local:8123",
@@ -42,6 +56,7 @@ PLACEHOLDERS = {
     "WATT_ENTITY": "sensor.smart_plug_power",
     "RDP_HOST": "target-pc",
     "PC_SSH_TARGET": "user@target-pc",
+    "TARGET_OS": "windows",
     "POWER_THRESHOLD_W": "5",
     "RDP_WAIT_SECONDS": "180",
     "SHUTDOWN_WAIT_SECONDS": "300",
@@ -49,6 +64,13 @@ PLACEHOLDERS = {
     "POWER_ON_LOW_CONFIRMATIONS": "3",
     "POWER_OFF_LOW_CONFIRMATIONS": "4",
 }
+
+SECRET_FIELDS = {"HA_TOKEN"}
+CHOICES = {"TARGET_OS": ["windows", "linux"]}
+
+
+def timestamp() -> str:
+    return datetime.now().strftime("%H:%M:%S")
 
 
 class ActionWorker(QThread):
@@ -78,241 +100,166 @@ class ActionWorker(QThread):
         return self.password
 
 
-class MainWindow(QMainWindow):
+class Backend(QObject):
+    logLine = Signal(str)
+    passwordRequested = Signal(str)
+    statusChanged = Signal()
+    runningChanged = Signal()
+    valuesChanged = Signal()
+
     def __init__(self) -> None:
         super().__init__()
-        self.setObjectName("mainWindow")
-        self.setWindowTitle("PlugWake")
-        icon = ROOT / "assets" / "icons" / "plugwake.png"
-        if icon.exists():
-            self.setWindowIcon(QIcon(str(icon)))
-        self.resize(780, 560)
-        self.inputs: dict[str, QLineEdit | QComboBox] = {}
-        self.worker: QThread | None = None
-        self.status = QLabel("Ready")
-        self.status.setObjectName("status")
+        self._status = "Ready"
+        self._running = False
+        self._label = ""
+        self._worker: ActionWorker | None = None
+        self._values: dict[str, str] = {}
+        self.loadSettings()
 
-        tabs = QTabWidget()
-        tabs.addTab(self._control_tab(), "Control")
-        tabs.addTab(self._settings_tab(), "Settings")
-        self.setCentralWidget(tabs)
-        self.load_settings()
+    def _get_status(self) -> str:
+        return self._status
 
-    def _control_tab(self) -> QWidget:
-        root = QWidget()
-        layout = QVBoxLayout(root)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
-        primary = QHBoxLayout()
-        primary.setSpacing(10)
+    def _get_running(self) -> bool:
+        return self._running
 
-        on_button = QPushButton("Remote On")
-        on_button.setObjectName("primaryOn")
-        on_button.setMinimumHeight(44)
-        on_button.clicked.connect(lambda: self.run_action("Remote On", remote_on))
-        primary.addWidget(on_button)
+    def _get_values(self) -> dict[str, str]:
+        return self._values
 
-        off_button = QPushButton("Remote Off")
-        off_button.setObjectName("primaryOff")
-        off_button.setMinimumHeight(44)
-        off_button.clicked.connect(
-            lambda: self.run_action(
-                "Remote Off",
-                remote_off,
-                needs_password=True,
-                confirm="Shut down the target PC and turn the smart plug off?",
-            )
-        )
-        primary.addWidget(off_button)
-
-        secondary = QHBoxLayout()
-        secondary.setSpacing(10)
-        reboot_group = QHBoxLayout()
-        reboot_group.setSpacing(10)
-        tool_group = QHBoxLayout()
-        tool_group.setSpacing(10)
-
-        soft_reboot = QPushButton("Soft Reboot")
-        soft_reboot.clicked.connect(
-            lambda: self.run_action(
-                "Soft Reboot", remote_reboot, needs_password=True, confirm="Reboot the target PC over SSH?"
-            )
-        )
-        reboot_group.addWidget(soft_reboot)
-
-        hard_reboot = QPushButton("Hard Reboot")
-        hard_reboot.setObjectName("danger")
-        hard_reboot.clicked.connect(
-            lambda: self.run_action(
-                "Hard Reboot",
-                remote_hard_reboot,
-                needs_password=True,
-                confirm="Shut down the target PC, cut plug power, turn it back on, and open RDP?",
-            )
-        )
-        reboot_group.addWidget(hard_reboot)
-
-        for label, fn in [
-            ("Test Home Assistant", lambda: self.run_action("Test Home Assistant", test_home_assistant)),
-            ("Test RDP Port", lambda: self.run_action("Test RDP Port", test_rdp_host)),
-        ]:
-            button = QPushButton(label)
-            button.clicked.connect(fn)
-            tool_group.addWidget(button)
-        clear_button = QPushButton("Clear Log")
-        clear_button.clicked.connect(lambda: self.log.clear())
-        tool_group.addWidget(clear_button)
-        secondary.addLayout(reboot_group)
-        secondary.addStretch()
-        secondary.addLayout(tool_group)
-
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        layout.addWidget(self.status)
-        layout.addLayout(primary)
-        layout.addLayout(secondary)
-        layout.addWidget(self.log)
-        return root
-
-    def _settings_tab(self) -> QWidget:
-        root = QWidget()
-        layout = QVBoxLayout(root)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
-
-        for key in FIELDS:
-            if key == "TARGET_OS":
-                field = QComboBox()
-                field.addItems(["windows", "linux"])
-            else:
-                field = QLineEdit()
-                field.setPlaceholderText(PLACEHOLDERS.get(key, ""))
-                if key == "HA_TOKEN":
-                    field.setEchoMode(QLineEdit.EchoMode.Password)
-            self.inputs[key] = field
-
-        layout.addWidget(self._settings_group("Home Assistant", ["HA_URL", "HA_TOKEN", "PLUG_ENTITY", "WATT_ENTITY"]))
-        layout.addWidget(self._settings_group("Target PC", ["RDP_HOST", "PC_SSH_TARGET", "TARGET_OS"]))
-        layout.addWidget(
-            self._settings_group(
-                "Power Safety",
-                [
-                    "POWER_THRESHOLD_W",
-                    "RDP_WAIT_SECONDS",
-                    "SHUTDOWN_WAIT_SECONDS",
-                    "PLUG_OFF_SECONDS",
-                    "POWER_ON_LOW_CONFIRMATIONS",
-                    "POWER_OFF_LOW_CONFIRMATIONS",
+    def _get_setting_groups(self) -> list[dict]:
+        return [
+            {
+                "title": title,
+                "fields": [
+                    {
+                        "key": key,
+                        "placeholder": PLACEHOLDERS.get(key, ""),
+                        "secret": key in SECRET_FIELDS,
+                        "choices": CHOICES.get(key, []),
+                    }
+                    for key in keys
                 ],
-            )
-        )
+            }
+            for title, keys in SETTING_GROUPS
+        ]
 
-        save = QPushButton("Save .env")
-        save.clicked.connect(self.save_settings)
-        reload_button = QPushButton("Reload .env")
-        reload_button.clicked.connect(self.load_settings)
-        reset_button = QPushButton("Reset Defaults")
-        reset_button.clicked.connect(self.reset_defaults)
-        buttons = QHBoxLayout()
-        buttons.addWidget(save)
-        buttons.addWidget(reload_button)
-        buttons.addWidget(reset_button)
-        layout.addLayout(buttons)
-        layout.addStretch()
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setWidget(root)
-        return scroll
+    status = Property(str, _get_status, notify=statusChanged)
+    running = Property(bool, _get_running, notify=runningChanged)
+    values = Property("QVariantMap", _get_values, notify=valuesChanged)
+    settingGroups = Property("QVariantList", _get_setting_groups, constant=True)
 
-    def _settings_group(self, title: str, keys: list[str]) -> QGroupBox:
-        group = QGroupBox(title)
-        form = QFormLayout(group)
-        for key in keys:
-            form.addRow(key, self.inputs[key])
-        return group
+    def log(self, text: str) -> None:
+        self.logLine.emit(f"[{timestamp()}] {text}")
 
-    def append_log(self, text: str) -> None:
-        self.log.appendPlainText(f"[{timestamp()}] {text}")
+    def _set_status(self, text: str) -> None:
+        self._status = text
+        self.statusChanged.emit()
 
-    def load_settings(self) -> None:
-        values = load_env()
-        for key, field in self.inputs.items():
-            value = values.get(key, "")
-            if isinstance(field, QComboBox):
-                field.setCurrentText(value if value in ["windows", "linux"] else "windows")
-            else:
-                field.setText(value)
+    def _set_running(self, running: bool) -> None:
+        self._running = running
+        self.runningChanged.emit()
 
-    def save_settings(self) -> None:
-        save_env({key: self.input_value(field) for key, field in self.inputs.items()})
-        self.append_log("Saved .env.")
+    @Slot(str, result=str)
+    def confirmText(self, action_id: str) -> str:
+        return ACTIONS[action_id][3]
 
-    def reset_defaults(self) -> None:
-        if (
-            QMessageBox.question(
-                self, "Reset Defaults", "Reset settings fields to example defaults? This will not save .env yet."
-            )
-            != QMessageBox.StandardButton.Yes
-        ):
+    @Slot(str, result=str)
+    def actionLabel(self, action_id: str) -> str:
+        return ACTIONS[action_id][0]
+
+    @Slot(str)
+    def run(self, action_id: str) -> None:
+        if self._running:
             return
-        for key, field in self.inputs.items():
-            if isinstance(field, QComboBox):
-                field.setCurrentText("windows")
-            else:
-                field.setText(PLACEHOLDERS.get(key, ""))
-        self.append_log("Reset settings fields to defaults. Save .env to apply.")
-
-    def input_value(self, field: QLineEdit | QComboBox) -> str:
-        if isinstance(field, QComboBox):
-            return field.currentText()
-        return field.text().strip()
-
-    def run_action(
-        self, label: str, action: Callable, needs_password: bool = False, confirm: str | None = None
-    ) -> None:
-        if self.worker and self.worker.isRunning():
-            QMessageBox.information(self, "PlugWake", "A command is already running.")
-            return
-        if confirm and QMessageBox.question(self, label, confirm) != QMessageBox.StandardButton.Yes:
-            return
-
+        label, action, needs_password, _confirm = ACTIONS[action_id]
         try:
             config = load_config()
         except RuntimeError as exc:
-            self.append_log(f"Error: {exc}")
-            self.status.setText(f"{label} failed")
+            self.log(f"Error: {exc}")
+            self._set_status(f"{label} failed")
             return
-        self.append_log(f"Running {label}.")
-        self.status.setText(f"Running {label}")
+
+        self._label = label
+        self.log(f"Running {label}.")
+        self._set_status(f"Running {label}")
         if needs_password:
             worker = ActionWorker(lambda log: action(config, log, worker.prompt_password))
-            worker.password_requested.connect(self.ask_password)
-            self.worker = worker
         else:
-            self.worker = ActionWorker(lambda log: action(config, log))
-        self.worker.line.connect(self.append_log)
-        self.worker.done.connect(lambda code: self.finish_action(label, code))
-        self.worker.start()
+            worker = ActionWorker(lambda log: action(config, log))
+        worker.line.connect(self._on_line)
+        worker.password_requested.connect(self.passwordRequested)
+        worker.done.connect(self._on_done)
+        self._worker = worker
+        self._set_running(True)
+        worker.start()
 
-    def finish_action(self, label: str, code: int) -> None:
-        self.append_log(f"{label} exited with code {code}.")
-        self.status.setText(f"{label} {'completed' if code == 0 else 'failed'}")
+    @Slot(str)
+    def _on_line(self, text: str) -> None:
+        self.log(text)
 
-    def ask_password(self, target: str) -> None:
-        assert isinstance(self.worker, ActionWorker)
-        password, ok = QInputDialog.getText(self, "Password", f"Password for {target}", QLineEdit.EchoMode.Password)
-        self.worker.password = password if ok else ""
+    @Slot(int)
+    def _on_done(self, code: int) -> None:
+        self.log(f"{self._label} exited with code {code}.")
+        self._set_status(f"{self._label} {'completed' if code == 0 else 'failed'}")
+        self._set_running(False)
+
+    @Slot(str, bool)
+    def providePassword(self, password: str, ok: bool) -> None:
+        if self._worker is not None:
+            self._worker.password = password if ok else ""
+
+    @Slot(str, str)
+    def setValue(self, key: str, value: str) -> None:
+        self._values[key] = value
+
+    @Slot()
+    def loadSettings(self) -> None:
+        env = load_env()
+        values = {key: env.get(key, "") for key in FIELDS}
+        if values["TARGET_OS"] not in CHOICES["TARGET_OS"]:
+            values["TARGET_OS"] = "windows"
+        self._values = values
+        self.valuesChanged.emit()
+
+    @Slot()
+    def saveSettings(self) -> None:
+        save_env({key: self._values.get(key, "").strip() for key in FIELDS})
+        self.log("Saved .env.")
+
+    @Slot()
+    def resetDefaults(self) -> None:
+        self._values = {key: PLACEHOLDERS.get(key, "") for key in FIELDS}
+        self.valuesChanged.emit()
+        self.log("Reset settings fields to defaults. Save .env to apply.")
 
 
 def main() -> None:
     os.chdir(ROOT)
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    mica = enable_mica(window)
-    apply_theme(app, window, mica)
-    app.styleHints().colorSchemeChanged.connect(lambda _scheme: apply_theme(app, window, mica))
-    window.show()
+    QQuickStyle.setStyle("FluentWinUI3")
+    mica = mica_supported()
+    if mica:
+        # The default Direct3D 11 swap chain is opaque, so Mica only shows through with OpenGL.
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.GraphicsApi.OpenGL)
+        QQuickWindow.setDefaultAlphaBuffer(True)
+
+    app = QGuiApplication(sys.argv)
+    app.setApplicationName("PlugWake")
+    icon = ROOT / "assets" / "icons" / "plugwake.png"
+    if icon.exists():
+        app.setWindowIcon(QIcon(str(icon)))
+
+    backend = Backend()
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("backend", backend)
+    engine.rootContext().setContextProperty("micaRequested", mica)
+    engine.rootContext().setContextProperty("appIconUrl", QUrl.fromLocalFile(str(icon)) if icon.exists() else QUrl())
+    engine.load(QUrl.fromLocalFile(str(QML_DIR / "Main.qml")))
+    if not engine.rootObjects():
+        raise SystemExit(1)
+
+    window = engine.rootObjects()[0]
+    if mica and not enable_mica(window):
+        window.setProperty("micaActive", False)
+    follow_color_scheme(app, window)
     raise SystemExit(app.exec())
 
 

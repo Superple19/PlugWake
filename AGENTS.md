@@ -81,6 +81,19 @@ uv run plugwake-cli test-rdp
 uv run plugwake-cli setup-shortcuts  # Windows only
 ```
 
+## Message Style
+
+User-facing log lines come from `src/plugwake/actions.py`. Keep them consistent:
+
+- Every stop or failure raises `ActionFailed` with the reason. Do not log a failure and return a flag; the CLI and GUI print it once as `Error: <reason>`.
+- Exception messages have no trailing period. Log lines end with a period.
+- Decisions start with `Decision:`. Non-fatal problems start with `Warning:`.
+- Power readings use `log_power()`: `Power <W> W, <status>.`
+- Progress uses `progress()`: `(n/N)` for counts and `(elapsed/total s)` for time limits.
+- Say how often a wait checks once, when the wait starts, not on every line.
+- Use "target PC", "RDP on <host>", "smart plug", and "Home Assistant" consistently.
+- Safety stops that leave plug power on end with `Not cutting plug power`.
+
 ## Commit Style
 
 Use Conventional Commits:

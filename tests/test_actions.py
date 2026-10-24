@@ -84,11 +84,14 @@ def test_hard_reboot_stops_when_remote_off_does_not_confirm_shutdown(
     plug_actions: list[str] = []
     rdp_opened: list[bool] = []
 
-    monkeypatch.setattr(actions, "remote_off", lambda *_args, **_kwargs: False)
+    def remote_off(*_args: object, **_kwargs: object) -> None:
+        raise actions.ActionFailed("Power recovered to 60 W. Not cutting plug power")
+
+    monkeypatch.setattr(actions, "remote_off", remote_off)
     monkeypatch.setattr(actions.HomeAssistant, "set_plug", lambda _self, state: plug_actions.append(state))
     monkeypatch.setattr(actions, "open_rdp", lambda *_args, **_kwargs: rdp_opened.append(True))
 
-    with pytest.raises(actions.ActionFailed, match="Shutdown was not confirmed"):
+    with pytest.raises(actions.ActionFailed, match="Power recovered to 60 W"):
         actions.remote_hard_reboot(config, lambda _message: None)
 
     assert plug_actions == []
@@ -107,7 +110,8 @@ def test_remote_off_fails_when_plug_does_not_confirm_off(monkeypatch: pytest.Mon
     monkeypatch.setattr(actions.time, "monotonic", iter([0, 16]).__next__)
     monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
 
-    assert actions.remote_off(config, lambda _message: None) is False
+    with pytest.raises(actions.ActionFailed, match="did not reach state off within 15 seconds"):
+        actions.remote_off(config, lambda _message: None)
     assert plug_actions == ["off"]
 
 
@@ -300,7 +304,7 @@ def test_remote_on_stops_when_plug_does_not_confirm_on(monkeypatch: pytest.Monke
     monkeypatch.setattr(actions.time, "monotonic", iter([0, 16]).__next__)
     monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(actions.ActionFailed, match="did not confirm the on state"):
+    with pytest.raises(actions.ActionFailed, match="did not reach state on"):
         actions.remote_on(config, lambda _message: None)
 
     assert plug_actions == ["on"]
@@ -406,7 +410,7 @@ def test_remote_on_power_cycle_stops_when_plug_does_not_confirm_off(monkeypatch:
     monkeypatch.setattr(actions, "tcp_open", lambda host, *_args, **_kwargs: host != config.rdp_host)
     monkeypatch.setattr(actions.time, "monotonic", iter([0, 16]).__next__)
 
-    with pytest.raises(actions.ActionFailed, match="did not confirm the off state"):
+    with pytest.raises(actions.ActionFailed, match="did not reach state off"):
         actions.remote_on(config, lambda _message: None)
 
     assert "plug on" not in events

@@ -4,19 +4,25 @@ import sys
 
 import pytest
 
-from plugwake import cli
+from plugwake import actions, cli
 
 
 def test_cli_off_exits_with_error_when_plug_power_is_not_cut(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "argv", ["plugwake-cli", "off"])
     monkeypatch.setattr(cli, "load_config", lambda: None)
-    monkeypatch.setattr(cli, "remote_off", lambda *_args: False)
-    monkeypatch.setattr(cli, "log", lambda _text: None)
+    lines: list[str] = []
+
+    def remote_off(*_args: object) -> None:
+        raise actions.ActionFailed("Power recovered to 60 W. Not cutting plug power")
+
+    monkeypatch.setattr(cli, "remote_off", remote_off)
+    monkeypatch.setattr(cli, "log", lines.append)
 
     with pytest.raises(SystemExit) as exc:
         cli.main()
 
     assert exc.value.code == 1
+    assert lines == ["Error: Power recovered to 60 W. Not cutting plug power"]
 
 
 def test_cli_reports_config_errors_without_traceback(monkeypatch: pytest.MonkeyPatch) -> None:

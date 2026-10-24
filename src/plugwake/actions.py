@@ -165,7 +165,7 @@ def open_rdp(config: Config, log: Log) -> None:
             log(f"RDP on {config.rdp_host} is ready. Opening RDP.")
             subprocess.Popen(command)
             return
-        log(f"RDP on {config.rdp_host} not ready ({elapsed:.0f}/{config.rdp_wait_seconds} s).")
+        log(f"RDP on {config.rdp_host} not ready {progress(elapsed, config.rdp_wait_seconds, 's')}.")
         time.sleep(5)
     raise ActionFailed(f"RDP on {config.rdp_host} was not ready within {config.rdp_wait_seconds} seconds")
 
@@ -201,20 +201,48 @@ def ssh_failure(message: str, tailscale: bool | None) -> ActionFailed:
     return ActionFailed(message)
 
 
-def remote_on(config: Config, log: Log) -> None:
-    require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "rdp_host"])
-    check_network(config, log)
+def progress(done: float, total: float, unit: str = "") -> str:
+    suffix = f" {unit}" if unit else ""
+    return f"({done:.0f}/{total:g}{suffix})"
 
-    ha = HomeAssistant(config)
+
+def log_power(log: Log, watt: float, status: str) -> None:
+    log(f"Power {watt:g} W, {status}.")
+
+
+def read_plug_and_power(ha: HomeAssistant, config: Config, log: Log) -> tuple[str, float]:
     log(f"Reading plug state: {config.plug_entity}")
     plug = require_plug_state(ha.state(config.plug_entity))
     log(f"Reading power sensor: {config.watt_entity}")
     watt = ha.watt()
     log(f"Plug {plug}, power {watt:g} W.")
+    return plug, watt
+
+
+def confirm_sustained_low_power(ha: HomeAssistant, config: Config, log: Log, watt: float, needed: int) -> float | None:
+    """Return None when power stays low for `needed` readings, or the reading that recovered."""
+    low_count = 1
+    log_power(log, watt, f"low {progress(low_count, needed)}")
+    while low_count < needed:
+        time.sleep(5)
+        watt = ha.watt()
+        if watt >= config.power_threshold_w:
+            return watt
+        low_count += 1
+        log_power(log, watt, f"low {progress(low_count, needed)}")
+    return None
+
+
+def remote_on(config: Config, log: Log) -> None:
+    require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "rdp_host"])
+    check_network(config, log)
+
+    ha = HomeAssistant(config)
+    plug, watt = read_plug_and_power(ha, config, log)
 
     if plug == "off":
         log("Decision: plug is off, so turning it on.")
-        turn_plug_on(ha, config, log)
+        turn_plug_on(ha, config)
         open_rdp(config, log)
         return
 
@@ -228,93 +256,73 @@ def remote_on(config: Config, log: Log) -> None:
         "Checking for sustained low power every 5 seconds."
     )
     if tcp_open(config.rdp_host, 3389):
-        log(f"{config.rdp_host} is online despite low power. Treating PC as already on.")
+        log(f"RDP on {config.rdp_host} is ready despite low power. Treating PC as already on.")
         open_rdp(config, log)
         return
 
-    low_count = 1
-    log(f"Power {watt:g} W, low ({low_count}/{config.power_on_low_confirmations}).")
-    while low_count < config.power_on_low_confirmations:
-        time.sleep(5)
-        watt = ha.watt()
-        if watt < config.power_threshold_w:
-            low_count += 1
-            log(f"Power {watt:g} W, low ({low_count}/{config.power_on_low_confirmations}).")
-        else:
-            log(f"Power {watt:g} W, recovered. PC is already on.")
-            open_rdp(config, log)
-            return
+    recovered = confirm_sustained_low_power(ha, config, log, watt, config.power_on_low_confirmations)
+    if recovered is not None:
+        log_power(log, recovered, "recovered. PC is already on")
+        open_rdp(config, log)
+        return
 
     log(f"Decision: power stayed below {config.power_threshold_w:g} W, so power-cycling the plug.")
-    ha.set_plug("off")
-    if not wait_for_plug_state(ha, config, "off", log):
-        raise ActionFailed("Smart plug did not confirm the off state")
+    turn_plug_off(ha, config)
     wait_with_plug_off(config, log)
-    turn_plug_on(ha, config, log)
+    turn_plug_on(ha, config)
     open_rdp(config, log)
 
 
-def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> bool:
+def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "ssh_target"])
     tailscale = check_network(config, log)
 
     ha = HomeAssistant(config)
-    log(f"Reading plug state: {config.plug_entity}")
-    plug = require_plug_state(ha.state(config.plug_entity))
-    log(f"Reading power sensor: {config.watt_entity}")
-    watt = ha.watt()
-    log(f"Plug {plug}, power {watt:g} W.")
+    plug, watt = read_plug_and_power(ha, config, log)
 
     if plug == "off":
         log("Decision: plug is already off.")
-        return True
+        return
 
     if watt >= config.power_threshold_w:
         log(f"Decision: PC appears to be running. Sending shutdown over SSH to {config.ssh_target}.")
         if not ssh_shutdown(config, log, password_prompt):
             raise ssh_failure("SSH shutdown failed", tailscale)
-
         log(
             f"SSH shutdown sent. Waiting for power to drop below {config.power_threshold_w:g} W. "
             "Checking every 5 seconds."
         )
-        start = time.monotonic()
-        low_count = 0
-        while time.monotonic() - start < config.shutdown_wait_seconds:
-            time.sleep(5)
-            elapsed = time.monotonic() - start
-            watt = ha.watt()
-            if watt < config.power_threshold_w:
-                low_count += 1
-                log(f"Power {watt:g} W, low ({low_count}/{config.power_off_low_confirmations}).")
-                if low_count >= config.power_off_low_confirmations:
-                    break
-            else:
-                low_count = 0
-                log(f"Power {watt:g} W, waiting for shutdown ({elapsed:.0f}/{config.shutdown_wait_seconds} s).")
-
-        if low_count < config.power_off_low_confirmations:
-            log("Timed out waiting for shutdown. Not cutting power.")
-            return False
+        wait_for_shutdown(ha, config, log)
     else:
-        low_count = 1
-        log(f"Power {watt:g} W, low ({low_count}/{config.power_off_low_confirmations}).")
-        while low_count < config.power_off_low_confirmations:
-            time.sleep(5)
-            watt = ha.watt()
-            if watt < config.power_threshold_w:
-                low_count += 1
-                log(f"Power {watt:g} W, low ({low_count}/{config.power_off_low_confirmations}).")
-            else:
-                log(f"Power {watt:g} W, recovered. Not cutting power.")
-                return False
+        log(
+            f"Decision: PC appears to be off because power is below {config.power_threshold_w:g} W. "
+            "Checking for sustained low power every 5 seconds."
+        )
+        recovered = confirm_sustained_low_power(ha, config, log, watt, config.power_off_low_confirmations)
+        if recovered is not None:
+            raise ActionFailed(f"Power recovered to {recovered:g} W. Not cutting plug power")
 
     log(f"Decision: power is below {config.power_threshold_w:g} W, so turning plug off.")
-    ha.set_plug("off")
-    if not wait_for_plug_state(ha, config, "off", log):
-        log("Smart plug did not confirm the off state. Not continuing.")
-        return False
-    return True
+    turn_plug_off(ha, config)
+
+
+def wait_for_shutdown(ha: HomeAssistant, config: Config, log: Log) -> None:
+    needed = config.power_off_low_confirmations
+    start = time.monotonic()
+    low_count = 0
+    while time.monotonic() - start < config.shutdown_wait_seconds:
+        time.sleep(5)
+        elapsed = time.monotonic() - start
+        watt = ha.watt()
+        if watt < config.power_threshold_w:
+            low_count += 1
+            log_power(log, watt, f"low {progress(low_count, needed)}")
+            if low_count >= needed:
+                return
+        else:
+            low_count = 0
+            log_power(log, watt, f"waiting for shutdown {progress(elapsed, config.shutdown_wait_seconds, 's')}")
+    raise ActionFailed(f"Power did not stay low within {config.shutdown_wait_seconds} seconds. Not cutting plug power")
 
 
 def wait_with_plug_off(config: Config, log: Log) -> None:
@@ -322,20 +330,23 @@ def wait_with_plug_off(config: Config, log: Log) -> None:
     time.sleep(config.plug_off_seconds)
 
 
-def turn_plug_on(ha: HomeAssistant, config: Config, log: Log) -> None:
+def turn_plug_on(ha: HomeAssistant, config: Config) -> None:
     ha.set_plug("on")
-    if not wait_for_plug_state(ha, config, "on", log):
-        raise ActionFailed("Smart plug did not confirm the on state")
+    confirm_plug_state(ha, config, "on")
 
 
-def wait_for_plug_state(ha: HomeAssistant, config: Config, expected: str, log: Log) -> bool:
+def turn_plug_off(ha: HomeAssistant, config: Config) -> None:
+    ha.set_plug("off")
+    confirm_plug_state(ha, config, "off")
+
+
+def confirm_plug_state(ha: HomeAssistant, config: Config, expected: str) -> None:
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if ha.state(config.plug_entity) == expected:
-            return True
+            return
         time.sleep(1)
-    log(f"Smart plug did not reach state {expected} within 15 seconds.")
-    return False
+    raise ActionFailed(f"Smart plug did not reach state {expected} within 15 seconds")
 
 
 def url_host(url: str) -> str:
@@ -483,7 +494,7 @@ def connect_ssh(
             return client, password
         except paramiko.AuthenticationException:
             client.close()
-            log(f"SSH password authentication failed ({attempt}/3).")
+            log(f"SSH password authentication failed {progress(attempt, 3)}.")
         except Exception as exc:
             client.close()
             log(f"SSH password authentication failed: {exc}")
@@ -501,9 +512,8 @@ def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | No
 
 def remote_hard_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     log("Starting hard reboot.")
-    if not remote_off(config, log, password_prompt):
-        raise ActionFailed("Shutdown was not confirmed")
+    remote_off(config, log, password_prompt)
     wait_with_plug_off(config, log)
     log("Turning plug back on.")
-    turn_plug_on(HomeAssistant(config), config, log)
+    turn_plug_on(HomeAssistant(config), config)
     open_rdp(config, log)

@@ -8,15 +8,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from .actions import (
-    ActionFailed,
-    remote_hard_reboot,
-    remote_off,
-    remote_on,
-    remote_reboot,
-    test_home_assistant,
-    test_rdp_host,
-)
+from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
 from .config import load_config
 
 
@@ -38,8 +30,7 @@ def main() -> None:
         elif args.command == "on":
             remote_on(config, log)
         elif args.command == "off":
-            if not remote_off(config, log, prompt_password):
-                raise ActionFailed("Remote Off did not cut plug power")
+            remote_off(config, log, prompt_password)
         elif args.command == "reboot":
             remote_reboot(config, log, prompt_password)
         elif args.command == "hard-reboot":

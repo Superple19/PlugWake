@@ -137,12 +137,12 @@ class ActionWorker(QThread):
 
     def run(self) -> None:
         try:
-            result = self.action(self.line.emit)
+            self.action(self.line.emit)
         except Exception as exc:
             self.line.emit(f"Error: {exc}")
             self.done.emit(1)
             return
-        self.done.emit(1 if result is False else 0)
+        self.done.emit(0)
 
     def prompt_password(self, target: str) -> str | None:
         self.password = None

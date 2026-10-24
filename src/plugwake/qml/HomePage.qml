@@ -38,18 +38,19 @@ Item {
 
                     StatusTile {
                         readonly property string plug: backend.pcStatus.plug || ""
+                        readonly property var watt: backend.pcStatus.watt
+                        readonly property var pcRunning: backend.pcStatus.pc_running
+                        readonly property bool hasWatt: watt !== null && watt !== undefined
 
                         title: page.t("Smart plug")
                         known: plug !== ""
-                        good: plug === "on"
-                        value: page.t(plug === "on" ? "On" : plug === "off" ? "Off" : "Unknown")
-                    }
-                    StatusTile {
-                        readonly property var watt: backend.pcStatus.watt
-
-                        title: page.t("Power")
-                        known: false
-                        value: watt === null || watt === undefined ? page.t("Unknown") : Number(watt).toFixed(1) + " W"
+                        // Green only when the plug is on and the PC is drawing running power.
+                        good: plug === "on" && pcRunning === true
+                        value: plug === "off" ? page.t("Off")
+                            : plug !== "on" ? page.t("Unknown")
+                            : !hasWatt ? page.t("On")
+                            : pcRunning === false ? page.t("On (%1 W · PC off)").arg(Number(watt).toFixed(1))
+                            : page.t("On (%1 W)").arg(Number(watt).toFixed(1))
                     }
                     StatusTile {
                         readonly property var rdp: backend.pcStatus.rdp

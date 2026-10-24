@@ -74,34 +74,69 @@ Item {
                 Frame {
                     Layout.fillWidth: true
 
-                    RowLayout {
+                    ColumnLayout {
                         anchors.fill: parent
-                        spacing: 24
+                        spacing: 14
 
-                        ColumnLayout {
+                        RowLayout {
                             Layout.fillWidth: true
-                            spacing: 2
+                            spacing: 24
 
-                            Label {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: page.t("Language")
+                                spacing: 2
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: page.t("Language")
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: page.t("Applies right away. Logs stay in English.")
+                                    opacity: 0.7
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
+                                }
                             }
-                            Label {
-                                Layout.fillWidth: true
-                                text: page.t("Applies right away. Logs stay in English.")
-                                opacity: 0.7
-                                font.pixelSize: 12
-                                wrapMode: Text.WordWrap
+
+                            ComboBox {
+                                readonly property var codes: ["system", "en", "ko"]
+
+                                Layout.preferredWidth: 300
+                                model: [page.t("Use system language"), "English", "한국어"]
+                                currentIndex: Math.max(0, codes.indexOf(backend.language))
+                                onActivated: index => backend.setLanguage(codes[index])
                             }
                         }
 
-                        ComboBox {
-                            readonly property var codes: ["system", "en", "ko"]
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 24
 
-                            Layout.preferredWidth: 300
-                            model: [page.t("Use system language"), "English", "한국어"]
-                            currentIndex: Math.max(0, codes.indexOf(backend.language))
-                            onActivated: index => backend.setLanguage(codes[index])
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: page.t("Status refresh")
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: page.t("How often Home checks the plug and RDP. Refresh still works when this is off.")
+                                    opacity: 0.7
+                                    font.pixelSize: 12
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+
+                            ComboBox {
+                                Layout.preferredWidth: 300
+                                model: backend.refreshChoices.map(
+                                    seconds => seconds === 0 ? page.t("Off") : page.t("Every %1 s").arg(seconds))
+                                currentIndex: Math.max(0, backend.refreshChoices.indexOf(backend.refreshSeconds))
+                                onActivated: index => backend.setRefreshSeconds(backend.refreshChoices[index])
+                            }
                         }
                     }
                 }

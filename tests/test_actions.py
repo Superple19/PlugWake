@@ -501,7 +501,7 @@ def test_read_status_reports_plug_power_and_rdp(monkeypatch: pytest.MonkeyPatch)
     config = make_config()
     fake_plug(monkeypatch, [42.5])
 
-    assert actions.read_status(config) == {"plug": "on", "watt": 42.5, "rdp": True, "error": ""}
+    assert actions.read_status(config) == {"plug": "on", "watt": 42.5, "pc_running": True, "rdp": True, "error": ""}
 
 
 def test_read_status_skips_home_assistant_when_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -509,7 +509,13 @@ def test_read_status_skips_home_assistant_when_not_configured(monkeypatch: pytes
 
     status = actions.read_status(make_config(ha_token=""))
 
-    assert status == {"plug": "", "watt": None, "rdp": False, "error": "Home Assistant is not configured"}
+    assert status == {
+        "plug": "",
+        "watt": None,
+        "pc_running": None,
+        "rdp": False,
+        "error": "Home Assistant is not configured",
+    }
 
 
 def test_read_status_keeps_rdp_result_when_home_assistant_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -523,3 +529,12 @@ def test_read_status_keeps_rdp_result_when_home_assistant_fails(monkeypatch: pyt
     assert status["rdp"] is True
     assert status["plug"] == ""
     assert status["error"] == "Home Assistant is not reachable (timed out)"
+
+
+def test_read_status_marks_low_power_as_pc_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_plug(monkeypatch, [1.2])
+
+    status = actions.read_status(make_config(power_threshold_w=5.0))
+
+    assert status["plug"] == "on"
+    assert status["pc_running"] is False

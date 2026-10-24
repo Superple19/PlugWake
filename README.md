@@ -165,7 +165,7 @@ uv run plugwake
 
 The GUI is built with Qt Quick and the [FluentWinUI3 style](https://doc.qt.io/qt-6/qtquickcontrols-fluentwinui3.html) that ships with Qt 6.8 and later. It follows the system light or dark theme and accent color. On Windows 11 22H2 or later it uses the Mica window backdrop and renders with OpenGL so the backdrop shows through; elsewhere it uses a solid background.
 
-The Home page shows the smart plug state, current power, and whether RDP port 3389 answers. It refreshes every 15 seconds in the background and only reads; it never switches the plug.
+The Home page shows the smart plug state with its current power, for example `On (134.6 W)`, and whether RDP port 3389 answers. When the plug is on but power is below `POWER_THRESHOLD_W`, it shows `PC off`. It refreshes in the background every 15 seconds by default; change or turn this off in Settings → App → Status refresh. The Refresh button always works. It only reads and never switches the plug.
 
 The GUI is available in English and Korean. Settings → App → Language follows the system language by default and switches right away. The choice is stored as a per-user app preference, not in `.env`. Log lines stay in English.
 

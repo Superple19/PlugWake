@@ -10,9 +10,10 @@ KO: dict[str, str] = {
     "Home": "홈",
     "Settings": "설정",
     "Smart plug": "스마트 플러그",
-    "Power": "전력",
     "Remote desktop": "원격 데스크톱",
     "On": "켜짐",
+    "On (%1 W)": "켜짐 (%1 W)",
+    "On (%1 W · PC off)": "켜짐 (%1 W · PC 꺼짐)",
     "Off": "꺼짐",
     "Unknown": "알 수 없음",
     "Ready": "준비됨",
@@ -66,6 +67,11 @@ KO: dict[str, str] = {
     "Language": "언어",
     "Applies right away. Logs stay in English.": "바로 적용됩니다. 로그는 영어로 표시됩니다.",
     "Use system language": "시스템 언어 사용",
+    "Status refresh": "상태 새로 고침",
+    "How often Home checks the plug and RDP. Refresh still works when this is off.": (
+        "홈 화면이 플러그와 RDP를 확인하는 주기입니다. 꺼도 새로 고침 버튼은 쓸 수 있습니다."
+    ),
+    "Every %1 s": "%1초마다",
     # Setting groups
     "Home Assistant": "Home Assistant",
     "Target PC": "대상 PC",

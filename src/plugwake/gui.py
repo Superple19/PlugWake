@@ -29,7 +29,9 @@ from .i18n import LANGUAGE_CHOICES, TRANSLATIONS, resolve, translate
 from .theme import enable_mica, follow_color_scheme, mica_supported
 
 QML_DIR = Path(__file__).with_name("qml")
-STATUS_POLL_MS = 15_000
+# Seconds between background status reads. 0 turns background reads off.
+REFRESH_CHOICES = [0, 5, 10, 15, 30, 60]
+DEFAULT_REFRESH_SECONDS = 15
 
 # id: (label, action, needs_password, confirmation)
 ACTIONS: dict[str, tuple[str, Callable, bool, str]] = {
@@ -158,7 +160,7 @@ class StatusProbe(QThread):
         try:
             status = read_status(load_config())
         except Exception as exc:
-            status = {"plug": "", "watt": None, "rdp": None, "error": str(exc)}
+            status = {"plug": "", "watt": None, "pc_running": None, "rdp": None, "error": str(exc)}
         status["updated"] = timestamp()
         self.result.emit(status)
 
@@ -175,10 +177,12 @@ class Backend(QObject):
     noticeChanged = Signal()
     testResultsChanged = Signal()
     languageChanged = Signal()
+    refreshSecondsChanged = Signal()
 
-    def __init__(self, language: str = "en") -> None:
+    def __init__(self, language: str = "en", refresh_seconds: int = DEFAULT_REFRESH_SECONDS) -> None:
         super().__init__()
         self._language = language if language in LANGUAGE_CHOICES else "system"
+        self._refresh_seconds = refresh_seconds if refresh_seconds in REFRESH_CHOICES else DEFAULT_REFRESH_SECONDS
         self._status: tuple[str, str] = ("Ready", "")
         self._running = False
         self._cancelling = False
@@ -191,7 +195,14 @@ class Backend(QObject):
         self._test_results: dict[str, dict[str, object]] = {}
         self._test_id = ""
         self._last_line = ""
-        self._pc_status: dict[str, object] = {"plug": "", "watt": None, "rdp": None, "error": "", "updated": ""}
+        self._pc_status: dict[str, object] = {
+            "plug": "",
+            "watt": None,
+            "pc_running": None,
+            "rdp": None,
+            "error": "",
+            "updated": "",
+        }
         self._probe: StatusProbe | None = None
         self._poll_timer: QTimer | None = None
         self.loadSettings()
@@ -225,6 +236,12 @@ class Backend(QObject):
     def _get_language(self) -> str:
         return self._language
 
+    def _get_refresh_seconds(self) -> int:
+        return self._refresh_seconds
+
+    def _get_refresh_choices(self) -> list[int]:
+        return REFRESH_CHOICES
+
     def _get_strings(self) -> dict[str, str]:
         return TRANSLATIONS[resolve(self._language)]
 
@@ -254,6 +271,8 @@ class Backend(QObject):
 
     status = Property(str, _get_status, notify=statusChanged)
     language = Property(str, _get_language, notify=languageChanged)
+    refreshSeconds = Property(int, _get_refresh_seconds, notify=refreshSecondsChanged)
+    refreshChoices = Property("QVariantList", _get_refresh_choices, constant=True)
     strings = Property("QVariantMap", _get_strings, notify=languageChanged)
     running = Property(bool, _get_running, notify=runningChanged)
     cancelling = Property(bool, _get_cancelling, notify=cancellingChanged)
@@ -373,10 +392,25 @@ class Backend(QObject):
 
     def startStatusPolling(self) -> None:
         self._poll_timer = QTimer(self)
-        self._poll_timer.setInterval(STATUS_POLL_MS)
         self._poll_timer.timeout.connect(self.refreshStatus)
-        self._poll_timer.start()
+        self._apply_refresh_interval()
         self.refreshStatus()
+
+    def _apply_refresh_interval(self) -> None:
+        if self._poll_timer is None:
+            return
+        if self._refresh_seconds:
+            self._poll_timer.start(self._refresh_seconds * 1000)
+        else:
+            self._poll_timer.stop()
+
+    @Slot(int)
+    def setRefreshSeconds(self, seconds: int) -> None:
+        if seconds not in REFRESH_CHOICES or seconds == self._refresh_seconds:
+            return
+        self._refresh_seconds = seconds
+        self.refreshSecondsChanged.emit()
+        self._apply_refresh_interval()
 
     @Slot()
     def refreshStatus(self) -> None:
@@ -466,8 +500,13 @@ def main() -> None:
         app.setWindowIcon(QIcon(str(icon)))
 
     preferences = QSettings("PlugWake", "PlugWake")
-    backend = Backend(language=str(preferences.value("language", "system")))
+    try:
+        refresh_seconds = int(preferences.value("refresh_seconds", DEFAULT_REFRESH_SECONDS))
+    except (TypeError, ValueError):
+        refresh_seconds = DEFAULT_REFRESH_SECONDS
+    backend = Backend(language=str(preferences.value("language", "system")), refresh_seconds=refresh_seconds)
     backend.languageChanged.connect(lambda: preferences.setValue("language", backend.language))
+    backend.refreshSecondsChanged.connect(lambda: preferences.setValue("refresh_seconds", backend.refreshSeconds))
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("micaRequested", mica)

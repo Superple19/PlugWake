@@ -159,3 +159,28 @@ def test_setting_test_uses_unsaved_values(monkeypatch: pytest.MonkeyPatch) -> No
 def test_setting_metadata_covers_every_field() -> None:
     assert set(gui.SETTINGS) == set(gui.FIELDS)
     assert all(kind in {"text", "secret", "choice", "int", "float"} for _label, _desc, kind in gui.SETTINGS.values())
+
+
+def test_refresh_interval_drives_the_poll_timer() -> None:
+    QCoreApplication.instance() or QCoreApplication([])
+    backend = gui.Backend(refresh_seconds=30)
+    backend.refreshStatus = lambda: None
+    backend.startStatusPolling()
+
+    assert backend._poll_timer.isActive()
+    assert backend._poll_timer.interval() == 30_000
+
+    backend.setRefreshSeconds(0)
+    assert backend.refreshSeconds == 0
+    assert not backend._poll_timer.isActive()
+
+    backend.setRefreshSeconds(7)
+    assert backend.refreshSeconds == 0
+
+    backend.setRefreshSeconds(5)
+    assert backend._poll_timer.interval() == 5_000
+    backend._poll_timer.stop()
+
+
+def test_unknown_refresh_interval_falls_back_to_default() -> None:
+    assert gui.Backend(refresh_seconds=3).refreshSeconds == gui.DEFAULT_REFRESH_SECONDS

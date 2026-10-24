@@ -24,6 +24,8 @@ Remote OS switching is intentionally not supported.
 
 Target PC notes:
 
+- Enable the BIOS/UEFI setting that powers the PC on when AC power returns (often called "Restore on AC Power Loss" or "AC Power Recovery"). Remote On starts the PC by turning the plug on, so the PC will not boot without it.
+- Disable sleep on the target PC, or use hibernate instead. A sleeping PC draws little power and does not answer RDP, so PlugWake treats it as off: Remote On power-cycles it and Remote Off cuts its power, which loses the sleeping session.
 - Windows targets need OpenSSH Server enabled. Built-in Remote Desktop hosting requires Windows Pro, Enterprise, or Education; Windows Home cannot act as a Remote Desktop host.
 - Linux targets need an SSH server and an RDP server such as `xrdp`. Without an RDP server, the PC still powers on, but Remote On reports failure after `RDP_WAIT_SECONDS`.
 
@@ -61,7 +63,7 @@ ssh user@target-pc
 
 Only accept the fingerprint if it matches the target PC. OpenSSH stores the verified key in `~/.ssh/known_hosts` on Linux/macOS and in `%USERPROFILE%\.ssh\known_hosts` on Windows.
 
-Tailscale is optional, but it is a convenient way to keep Home Assistant and the target PC reachable without exposing them publicly. MagicDNS lets you use names like `target-pc` instead of Tailscale IP addresses. If the Tailscale CLI is installed but disconnected, Remote On logs a warning and continues; it stops only when Home Assistant itself is unreachable.
+Tailscale is optional, but it is a convenient way to keep Home Assistant and the target PC reachable without exposing them publicly. MagicDNS lets you use names like `target-pc` instead of Tailscale IP addresses. If the Tailscale CLI is installed but disconnected, PlugWake logs a warning and continues; it stops only when Home Assistant or SSH is actually unreachable.
 
 - Tailscale: <https://tailscale.com/>
 - Tailscale MagicDNS: <https://tailscale.com/docs/features/magicdns>
@@ -114,6 +116,7 @@ TARGET_OS=windows
 POWER_THRESHOLD_W=5
 RDP_WAIT_SECONDS=180
 SHUTDOWN_WAIT_SECONDS=300
+PLUG_OFF_SECONDS=10
 POWER_ON_LOW_CONFIRMATIONS=3
 POWER_OFF_LOW_CONFIRMATIONS=4
 ```
@@ -130,6 +133,7 @@ POWER_OFF_LOW_CONFIRMATIONS=4
 | `POWER_THRESHOLD_W` | Power at or above this value means the PC is running |
 | `RDP_WAIT_SECONDS` | How long Remote On waits for RDP port 3389 |
 | `SHUTDOWN_WAIT_SECONDS` | How long Remote Off waits for power to drop after shutdown; on timeout, plug power is not cut |
+| `PLUG_OFF_SECONDS` | How long the plug stays off during a power cycle or Hard Reboot |
 | `POWER_ON_LOW_CONFIRMATIONS` | Low-power readings Remote On needs before power-cycling an on plug |
 | `POWER_OFF_LOW_CONFIRMATIONS` | Low-power readings Remote Off needs before cutting plug power |
 

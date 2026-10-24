@@ -181,19 +181,29 @@ def rdp_command(host: str) -> list[str] | None:
     return None
 
 
-def remote_on(config: Config, log: Log) -> None:
-    require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "rdp_host"])
-
+def check_network(config: Config, log: Log, need_ha: bool = True) -> bool | None:
     tailscale = tailscale_connected()
     if tailscale is False:
-        log("Warning: Tailscale is not connected. Continuing in case Home Assistant is reachable without it.")
+        log("Warning: Tailscale is not connected. Continuing in case the network works without it.")
     if tailscale is None:
         log("Tailscale CLI was not found. Skipping Tailscale check.")
 
-    if not tcp_open(url_host(config.ha_url), url_port(config.ha_url)):
+    if need_ha and not tcp_open(url_host(config.ha_url), url_port(config.ha_url)):
         if tailscale is False:
             raise ActionFailed("Home Assistant is not reachable. Tailscale is also not connected")
         raise ActionFailed("Home Assistant is not reachable")
+    return tailscale
+
+
+def ssh_failure(message: str, tailscale: bool | None) -> ActionFailed:
+    if tailscale is False:
+        return ActionFailed(f"{message}. Tailscale is also not connected")
+    return ActionFailed(message)
+
+
+def remote_on(config: Config, log: Log) -> None:
+    require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "rdp_host"])
+    check_network(config, log)
 
     ha = HomeAssistant(config)
     log(f"Reading plug state: {config.plug_entity}")
@@ -237,13 +247,16 @@ def remote_on(config: Config, log: Log) -> None:
 
     log(f"Decision: power stayed below {config.power_threshold_w:g} W, so power-cycling the plug.")
     ha.set_plug("off")
-    time.sleep(3)
+    if not wait_for_plug_state(ha, config, "off", log):
+        raise ActionFailed("Smart plug did not confirm the off state")
+    wait_with_plug_off(config, log)
     turn_plug_on(ha, config, log)
     open_rdp(config, log)
 
 
 def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> bool:
     require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "ssh_target"])
+    tailscale = check_network(config, log)
 
     ha = HomeAssistant(config)
     log(f"Reading plug state: {config.plug_entity}")
@@ -259,7 +272,7 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
     if watt >= config.power_threshold_w:
         log(f"Decision: PC appears to be running. Sending shutdown over SSH to {config.ssh_target}.")
         if not ssh_shutdown(config, log, password_prompt):
-            raise ActionFailed("SSH shutdown failed")
+            raise ssh_failure("SSH shutdown failed", tailscale)
 
         log(
             f"SSH shutdown sent. Waiting for power to drop below {config.power_threshold_w:g} W. "
@@ -302,6 +315,11 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
         log("Smart plug did not confirm the off state. Not continuing.")
         return False
     return True
+
+
+def wait_with_plug_off(config: Config, log: Log) -> None:
+    log(f"Plug is off. Waiting {config.plug_off_seconds} seconds before turning it back on.")
+    time.sleep(config.plug_off_seconds)
 
 
 def turn_plug_on(ha: HomeAssistant, config: Config, log: Log) -> None:
@@ -475,15 +493,17 @@ def connect_ssh(
 
 def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     require_config(config, ["ssh_target"])
+    tailscale = check_network(config, log, need_ha=False)
     log(f"Rebooting target PC over SSH: {config.ssh_target}")
     if not run_power_command(config, reboot_command(config), log, password_prompt):
-        raise ActionFailed("Failed to reboot target PC")
+        raise ssh_failure("Failed to reboot target PC", tailscale)
 
 
 def remote_hard_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     log("Starting hard reboot.")
     if not remote_off(config, log, password_prompt):
         raise ActionFailed("Shutdown was not confirmed")
+    wait_with_plug_off(config, log)
     log("Turning plug back on.")
     turn_plug_on(HomeAssistant(config), config, log)
     open_rdp(config, log)

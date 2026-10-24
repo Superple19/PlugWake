@@ -11,6 +11,7 @@ from plugwake import config
         ("RDP_WAIT_SECONDS", "0"),
         ("SHUTDOWN_WAIT_SECONDS", "0"),
         ("SHUTDOWN_WAIT_SECONDS", "abc"),
+        ("PLUG_OFF_SECONDS", "0"),
         ("POWER_ON_LOW_CONFIRMATIONS", "0"),
         ("POWER_OFF_LOW_CONFIRMATIONS", "-1"),
         ("POWER_THRESHOLD_W", "nan"),
@@ -36,6 +37,7 @@ def test_load_config_uses_defaults_without_env_file(monkeypatch: pytest.MonkeyPa
     assert loaded.power_threshold_w == 5
     assert loaded.rdp_wait_seconds == 180
     assert loaded.shutdown_wait_seconds == 300
+    assert loaded.plug_off_seconds == 10
     assert loaded.power_on_low_confirmations == 3
     assert loaded.power_off_low_confirmations == 4
 

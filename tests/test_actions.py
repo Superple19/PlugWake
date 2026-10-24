@@ -8,6 +8,12 @@ from plugwake import actions
 from plugwake.config import Config
 
 
+@pytest.fixture(autouse=True)
+def reachable_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions, "tailscale_connected", lambda: None)
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: True)
+
+
 def make_config(**overrides: object) -> Config:
     values: dict[str, object] = {
         "ha_url": "http://ha.example.local:8123",
@@ -20,6 +26,7 @@ def make_config(**overrides: object) -> Config:
         "power_threshold_w": 5.0,
         "rdp_wait_seconds": 1,
         "shutdown_wait_seconds": 300,
+        "plug_off_seconds": 10,
         "power_on_low_confirmations": 3,
         "power_off_low_confirmations": 3,
     }
@@ -364,3 +371,61 @@ def test_remote_on_mentions_tailscale_when_home_assistant_is_unreachable(
 
     with pytest.raises(actions.ActionFailed, match="Tailscale is also not connected"):
         actions.remote_on(make_config(), lambda _message: None)
+
+
+def fake_plug(monkeypatch: pytest.MonkeyPatch, watts: list[float]) -> list[str]:
+    events: list[str] = []
+    plug = {"state": "on"}
+
+    def set_plug(_self: actions.HomeAssistant, state: str) -> None:
+        events.append(f"plug {state}")
+        plug["state"] = state
+
+    monkeypatch.setattr(actions.HomeAssistant, "state", lambda _self, _entity: plug["state"])
+    monkeypatch.setattr(actions.HomeAssistant, "watt", lambda _self: watts.pop(0))
+    monkeypatch.setattr(actions.HomeAssistant, "set_plug", set_plug)
+    monkeypatch.setattr(actions.time, "sleep", lambda seconds: events.append(f"sleep {seconds}"))
+    monkeypatch.setattr(actions, "open_rdp", lambda *_args, **_kwargs: events.append("rdp"))
+    return events
+
+
+def test_remote_on_power_cycle_waits_with_plug_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(power_on_low_confirmations=2, plug_off_seconds=12)
+    events = fake_plug(monkeypatch, [1.0, 1.0])
+    monkeypatch.setattr(actions, "tcp_open", lambda host, *_args, **_kwargs: host != config.rdp_host)
+
+    actions.remote_on(config, lambda _message: None)
+
+    assert events == ["sleep 5", "plug off", "sleep 12", "plug on", "rdp"]
+
+
+def test_remote_on_power_cycle_stops_when_plug_does_not_confirm_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(power_on_low_confirmations=1)
+    events = fake_plug(monkeypatch, [1.0])
+    monkeypatch.setattr(actions.HomeAssistant, "set_plug", lambda _self, state: events.append(f"plug {state}"))
+    monkeypatch.setattr(actions, "tcp_open", lambda host, *_args, **_kwargs: host != config.rdp_host)
+    monkeypatch.setattr(actions.time, "monotonic", iter([0, 16]).__next__)
+
+    with pytest.raises(actions.ActionFailed, match="did not confirm the off state"):
+        actions.remote_on(config, lambda _message: None)
+
+    assert "plug on" not in events
+
+
+def test_hard_reboot_waits_with_plug_off_before_turning_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(plug_off_seconds=12)
+    events = fake_plug(monkeypatch, [])
+    monkeypatch.setattr(actions, "remote_off", lambda *_args, **_kwargs: events.append("off") or True)
+
+    actions.remote_hard_reboot(config, lambda _message: None)
+
+    assert events == ["off", "sleep 12", "plug on", "rdp"]
+
+
+def test_remote_off_ssh_failure_mentions_disconnected_tailscale(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_plug(monkeypatch, [60.0])
+    monkeypatch.setattr(actions, "tailscale_connected", lambda: False)
+    monkeypatch.setattr(actions, "ssh_shutdown", lambda *_args: False)
+
+    with pytest.raises(actions.ActionFailed, match="SSH shutdown failed. Tailscale is also not connected"):
+        actions.remote_off(make_config(), lambda _message: None)

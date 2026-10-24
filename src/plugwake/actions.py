@@ -87,10 +87,9 @@ def test_home_assistant(config: Config, log: Log) -> None:
 
 def test_rdp_host(config: Config, log: Log) -> None:
     require_config(config, ["rdp_host"])
-    if tcp_open(config.rdp_host, 3389, timeout=5):
-        log(f"RDP port 3389 on {config.rdp_host} is reachable.")
-    else:
-        log(f"RDP port 3389 on {config.rdp_host} is not reachable within 5 seconds.")
+    if not tcp_open(config.rdp_host, 3389, timeout=5):
+        raise ActionFailed(f"RDP port 3389 on {config.rdp_host} is not reachable within 5 seconds")
+    log(f"RDP port 3389 on {config.rdp_host} is reachable.")
 
 
 def tailscale_connected() -> bool | None:
@@ -150,15 +149,14 @@ def open_rdp(config: Config, log: Log) -> None:
         if tcp_open(config.rdp_host, 3389):
             command = rdp_command(config.rdp_host)
             if command is None:
-                log("No supported RDP client was found. Install xfreerdp on Linux.")
-                return
+                raise ActionFailed("No supported RDP client was found. Install FreeRDP on Linux")
             log(f"{config.rdp_host} is online. Opening RDP.")
             subprocess.Popen(command)
             return
         log(f"{config.rdp_host} is not ready yet. Retrying in 5 seconds. Attempt {attempt}.")
         attempt += 1
         time.sleep(5)
-    log(f"{config.rdp_host} did not come online within {config.rdp_wait_seconds} seconds")
+    raise ActionFailed(f"{config.rdp_host} did not come online within {config.rdp_wait_seconds} seconds")
 
 
 def rdp_command(host: str) -> list[str] | None:
@@ -177,14 +175,12 @@ def remote_on(config: Config, log: Log) -> None:
 
     tailscale = tailscale_connected()
     if tailscale is False:
-        log("Tailscale is not connected.")
-        return
+        raise ActionFailed("Tailscale is not connected")
     if tailscale is None:
         log("Tailscale CLI was not found. Skipping direct Tailscale check.")
 
     if not tcp_open(url_host(config.ha_url), url_port(config.ha_url)):
-        log("Home Assistant is not reachable.")
-        return
+        raise ActionFailed("Home Assistant is not reachable")
 
     ha = HomeAssistant(config)
     log(f"Reading plug state: {config.plug_entity}")
@@ -224,7 +220,7 @@ def remote_on(config: Config, log: Log) -> None:
             open_rdp(config, log)
             return
 
-    log(f"Decision: power stayed below {config.power_threshold_w:g} W, so power cycling plug.")
+    log(f"Decision: power stayed below {config.power_threshold_w:g} W, so power-cycling the plug.")
     ha.set_plug("off")
     time.sleep(3)
     turn_plug_on(ha, config, log)
@@ -462,15 +458,15 @@ def connect_ssh(
 
 def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     require_config(config, ["ssh_target"])
-    log(f"Rebooting remote PC over SSH: {config.ssh_target}")
+    log(f"Rebooting target PC over SSH: {config.ssh_target}")
     if not run_power_command(config, reboot_command(config), log, password_prompt):
-        raise ActionFailed("Failed to reboot remote PC")
+        raise ActionFailed("Failed to reboot target PC")
 
 
 def remote_hard_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     log("Starting hard reboot.")
     if not remote_off(config, log, password_prompt):
-        raise ActionFailed("Remote shutdown was not confirmed")
+        raise ActionFailed("Shutdown was not confirmed")
     log("Turning plug back on.")
     turn_plug_on(HomeAssistant(config), config, log)
     open_rdp(config, log)

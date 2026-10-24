@@ -19,8 +19,13 @@ Remote OS switching is intentionally not supported.
 
 - Home Assistant with a controllable smart plug and power sensor.
 - SSH access to the target PC for shutdown and reboot.
+- An RDP server on the target PC. Remote On treats the PC as online once TCP port 3389 opens.
 - `uv` for running the Python CLI and GUI.
-- Windows RDP hosts require Windows Pro, Enterprise, or Education. Windows Home cannot act as a built-in Remote Desktop host.
+
+Target PC notes:
+
+- Windows targets need OpenSSH Server enabled. Built-in Remote Desktop hosting requires Windows Pro, Enterprise, or Education; Windows Home cannot act as a Remote Desktop host.
+- Linux targets need an SSH server and an RDP server such as `xrdp`. Without an RDP server, the PC still powers on, but Remote On reports failure after `RDP_WAIT_SECONDS`.
 
 Linux clients need FreeRDP for RDP launch:
 
@@ -48,7 +53,7 @@ The HA token is sent as a Bearer token on every API request. Use an `https://` H
 - Home Assistant REST API: <https://developers.home-assistant.io/docs/api/rest/>
 - Home Assistant long-lived access tokens: <https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token>
 
-PlugWake rejects SSH servers that are not already in the client's known-hosts file. Verify the target fingerprint once with your system SSH client before using Remote Off or Reboot:
+PlugWake rejects SSH servers that are not already in the client's known-hosts file. Verify the target fingerprint once with your system SSH client before using Remote Off, Soft Reboot, or Hard Reboot:
 
 ```bash
 ssh user@target-pc
@@ -56,7 +61,7 @@ ssh user@target-pc
 
 Only accept the fingerprint if it matches the target PC. OpenSSH stores the verified key in `~/.ssh/known_hosts` on Linux/macOS and in `%USERPROFILE%\.ssh\known_hosts` on Windows.
 
-Tailscale is optional, but it is a convenient way to keep Home Assistant and the target PC reachable without exposing them publicly. MagicDNS lets you use names like `ha-server` instead of Tailscale IP addresses.
+Tailscale is optional, but it is a convenient way to keep Home Assistant and the target PC reachable without exposing them publicly. MagicDNS lets you use names like `target-pc` instead of Tailscale IP addresses.
 
 - Tailscale: <https://tailscale.com/>
 - Tailscale MagicDNS: <https://tailscale.com/docs/features/magicdns>
@@ -89,7 +94,7 @@ uv sync
 macOS is not currently supported as a client because RDP launch is implemented for Windows and Linux.
 
 3. Copy `.env.example` to `.env`.
-4. Fill in your Home Assistant URL, token, entity IDs, RDP host, SSH target, and target OS.
+4. Fill in your Home Assistant URL, token, entity IDs, RDP host, SSH target, and target OS. You can also edit these values in the GUI Settings tab.
 5. Create desktop launchers if wanted:
    - Windows: run `setup_shortcuts.bat`
    - Linux: run `bash setup_shortcuts.sh`
@@ -113,7 +118,20 @@ POWER_ON_LOW_CONFIRMATIONS=3
 POWER_OFF_LOW_CONFIRMATIONS=4
 ```
 
-Use `TARGET_OS=windows` for Windows hosts and `TARGET_OS=linux` for Linux hosts.
+| Setting | Meaning |
+| --- | --- |
+| `HA_URL` | Home Assistant base URL |
+| `HA_TOKEN` | Home Assistant long-lived access token |
+| `PLUG_ENTITY` | Smart plug switch entity |
+| `WATT_ENTITY` | Smart plug power sensor entity |
+| `RDP_HOST` | Host name or address used for RDP |
+| `PC_SSH_TARGET` | SSH target as `user@host` |
+| `TARGET_OS` | `windows` or `linux` |
+| `POWER_THRESHOLD_W` | Power at or above this value means the PC is running |
+| `RDP_WAIT_SECONDS` | How long Remote On waits for RDP port 3389 |
+| `SHUTDOWN_WAIT_SECONDS` | How long Remote Off waits for power to drop after shutdown; on timeout, plug power is not cut |
+| `POWER_ON_LOW_CONFIRMATIONS` | Low-power readings Remote On needs before power-cycling an on plug |
+| `POWER_OFF_LOW_CONFIRMATIONS` | Low-power readings Remote Off needs before cutting plug power |
 
 Linux target hosts use:
 
@@ -125,9 +143,6 @@ sudo -n systemctl reboot
 The SSH user must be allowed to run those commands with sudo. With a `NOPASSWD`
 sudoers rule for those commands, no password is requested. Otherwise PlugWake asks
 for the sudo password and retries with `sudo -S`.
-
-`SHUTDOWN_WAIT_SECONDS` is how long Remote Off waits for power to drop after the
-shutdown command before giving up without cutting power.
 
 ## Usage
 
@@ -163,8 +178,16 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-`reboot` sends an OS reboot over SSH. `hard-reboot` shuts the OS down, waits for low power, power-cycles the plug, then opens RDP.
-`test-rdp` checks whether TCP port 3389 is reachable; it does not perform an RDP login.
+| GUI button | CLI command | What it does |
+| --- | --- | --- |
+| Remote On | `on` | Turns the plug on or power-cycles it when needed, then opens RDP |
+| Remote Off | `off` | Shuts the OS down over SSH, waits for low power, then turns the plug off |
+| Soft Reboot | `reboot` | Sends an OS reboot over SSH |
+| Hard Reboot | `hard-reboot` | Runs Remote Off, turns the plug back on, then opens RDP |
+| Test Home Assistant | `test-ha` | Checks the Home Assistant API and token |
+| Test RDP Port | `test-rdp` | Checks TCP port 3389 only; it does not perform an RDP login |
+
+Commands exit with code 1 when they stop without finishing, for example when Remote Off does not cut plug power.
 
 Windows shortcut setup:
 
@@ -200,7 +223,8 @@ bash setup_shortcuts.sh
 - `setup_shortcuts.sh`: Linux desktop entry setup
 - `launch_gui.sh`: Linux GUI launcher
 - `src/plugwake/`: Python CLI and GUI code
-- `assets/`: shortcut icons and source icons
+- `tests/`: pytest tests
+- `assets/`: shortcut icons and their source images
 
 ## License
 

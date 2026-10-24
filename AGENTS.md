@@ -42,6 +42,7 @@ Before committing code changes, run the smallest relevant checks:
 
 ```bat
 .venv\Scripts\python.exe -m py_compile src\plugwake\config.py src\plugwake\actions.py src\plugwake\cli.py src\plugwake\gui.py
+uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 uv run plugwake-cli --help
@@ -110,6 +111,7 @@ fix: harden remote shutdown flow
 - `setup_shortcuts.bat` and `setup_shortcuts.sh`: desktop shortcut setup.
 - `install_uv.bat`: Windows `uv` installer helper.
 - `src/plugwake/`: Python CLI and GUI code.
+- `tests/`: pytest tests.
 - `assets/icons/`: generated shortcut icons (`.ico` for Windows, `.png` for Linux/PySide).
 - `assets/source-icons/`: source icon images documented in `NOTICE.md`.
 

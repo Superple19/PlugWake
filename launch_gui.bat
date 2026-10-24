@@ -1,5 +1,5 @@
 @echo off
-title PlugWake GUI
+title PlugWake
 cd /d "%~dp0"
 where uv >nul 2>nul
 if errorlevel 1 (

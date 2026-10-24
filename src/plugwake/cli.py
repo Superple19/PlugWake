@@ -8,7 +8,15 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
+from .actions import (
+    ActionFailed,
+    remote_hard_reboot,
+    remote_off,
+    remote_on,
+    remote_reboot,
+    test_home_assistant,
+    test_rdp_host,
+)
 from .config import load_config
 
 
@@ -17,7 +25,7 @@ def log(text: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="plugwake")
+    parser = argparse.ArgumentParser(prog="plugwake-cli")
     parser.add_argument(
         "command", choices=["on", "off", "reboot", "hard-reboot", "test-ha", "test-rdp", "setup-shortcuts"]
     )
@@ -30,7 +38,8 @@ def main() -> None:
         elif args.command == "on":
             remote_on(config, log)
         elif args.command == "off":
-            remote_off(config, log, prompt_password)
+            if not remote_off(config, log, prompt_password):
+                raise ActionFailed("Remote Off did not cut plug power")
         elif args.command == "reboot":
             remote_reboot(config, log, prompt_password)
         elif args.command == "hard-reboot":
@@ -50,7 +59,7 @@ def prompt_password(target: str) -> str:
 
 def setup_shortcuts() -> None:
     if os.name != "nt":
-        raise RuntimeError("Desktop shortcuts are only supported on Windows")
+        raise RuntimeError("setup-shortcuts is Windows only. On Linux, run setup_shortcuts.sh")
 
     root = Path(__file__).resolve().parents[2]
     shortcuts = [

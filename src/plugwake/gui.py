@@ -136,12 +136,12 @@ class ActionWorker(QThread):
 
     def run(self) -> None:
         try:
-            self.action(self.line.emit)
+            result = self.action(self.line.emit)
         except Exception as exc:
             self.line.emit(f"Error: {exc}")
             self.done.emit(1)
             return
-        self.done.emit(0)
+        self.done.emit(1 if result is False else 0)
 
     def prompt_password(self, target: str) -> str | None:
         self.password = None
@@ -220,7 +220,7 @@ class MainWindow(QMainWindow):
                 "Hard Reboot",
                 remote_hard_reboot,
                 needs_password=True,
-                confirm="Hard reboot will shut down the OS, cut plug power, turn it back on, and open RDP. Continue?",
+                confirm="Shut down the target PC, cut plug power, turn it back on, and open RDP?",
             )
         )
         reboot_group.addWidget(hard_reboot)
@@ -314,7 +314,7 @@ class MainWindow(QMainWindow):
 
     def save_settings(self) -> None:
         save_env({key: self.input_value(field) for key, field in self.inputs.items()})
-        self.append_log("Saved .env")
+        self.append_log("Saved .env.")
 
     def reset_defaults(self) -> None:
         if (
@@ -346,7 +346,7 @@ class MainWindow(QMainWindow):
             return
 
         config = load_config()
-        self.append_log(f"Running {label}")
+        self.append_log(f"Running {label}.")
         self.status.setText(f"Running {label}")
         if needs_password:
             worker = ActionWorker(lambda log: action(config, log, worker.prompt_password))
@@ -359,12 +359,12 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def finish_action(self, label: str, code: int) -> None:
-        self.append_log(f"{label} exited with {code}")
+        self.append_log(f"{label} exited with code {code}.")
         self.status.setText(f"{label} {'completed' if code == 0 else 'failed'}")
 
     def ask_password(self, target: str) -> None:
         assert isinstance(self.worker, ActionWorker)
-        password, ok = QInputDialog.getText(self, "SSH Password", f"Password for {target}", QLineEdit.EchoMode.Password)
+        password, ok = QInputDialog.getText(self, "Password", f"Password for {target}", QLineEdit.EchoMode.Password)
         self.worker.password = password if ok else ""
 
 

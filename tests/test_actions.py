@@ -81,7 +81,7 @@ def test_hard_reboot_stops_when_remote_off_does_not_confirm_shutdown(
     monkeypatch.setattr(actions.HomeAssistant, "set_plug", lambda _self, state: plug_actions.append(state))
     monkeypatch.setattr(actions, "open_rdp", lambda *_args, **_kwargs: rdp_opened.append(True))
 
-    with pytest.raises(actions.ActionFailed, match="shutdown was not confirmed"):
+    with pytest.raises(actions.ActionFailed, match="Shutdown was not confirmed"):
         actions.remote_hard_reboot(config, lambda _message: None)
 
     assert plug_actions == []
@@ -298,3 +298,28 @@ def test_remote_on_stops_when_plug_does_not_confirm_on(monkeypatch: pytest.Monke
 
     assert plug_actions == ["on"]
     assert rdp_opened == []
+
+
+def test_remote_on_fails_when_home_assistant_is_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions, "tailscale_connected", lambda: True)
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: False)
+
+    with pytest.raises(actions.ActionFailed, match="Home Assistant is not reachable"):
+        actions.remote_on(make_config(), lambda _message: None)
+
+
+def test_open_rdp_fails_when_host_never_comes_online(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions, "rdp_is_open", lambda _host: False)
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(actions.time, "monotonic", iter([0, 0, 2]).__next__)
+    monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(actions.ActionFailed, match="did not come online"):
+        actions.open_rdp(make_config(rdp_wait_seconds=1), lambda _message: None)
+
+
+def test_test_rdp_host_fails_when_port_is_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: False)
+
+    with pytest.raises(actions.ActionFailed, match="not reachable"):
+        actions.test_rdp_host(make_config(), lambda _message: None)

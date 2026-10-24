@@ -1,5 +1,5 @@
 @echo off
-title Power On PC
+title PlugWake Remote On
 cd /d "%~dp0"
 where uv >nul 2>nul
 if errorlevel 1 (

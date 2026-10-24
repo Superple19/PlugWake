@@ -88,6 +88,13 @@ QPushButton#primaryOff {
   color: #ffffff;
   font-weight: 600;
 }
+QPushButton#danger {
+  border-color: #f85149;
+  color: #ff7b72;
+}
+QPushButton#danger:hover {
+  background: #3d1d1d;
+}
 QLineEdit, QComboBox, QPlainTextEdit {
   background: #111827;
   border: 1px solid #374151;
@@ -207,6 +214,7 @@ class MainWindow(QMainWindow):
         reboot_group.addWidget(soft_reboot)
 
         hard_reboot = QPushButton("Hard Reboot")
+        hard_reboot.setObjectName("danger")
         hard_reboot.clicked.connect(
             lambda: self.run_action(
                 "Hard Reboot",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import socket
 import subprocess
@@ -45,9 +46,12 @@ class HomeAssistant:
     def watt(self) -> float:
         state = self.state(self.config.watt_entity)
         try:
-            return float(state)
+            value = float(state)
         except ValueError as exc:
             raise RuntimeError(f"Invalid power sensor state: {state}") from exc
+        if not math.isfinite(value) or value < 0:
+            raise RuntimeError(f"Invalid power sensor state: {state}")
+        return value
 
     def set_plug(self, state: str) -> None:
         service = "turn_on" if state == "on" else "turn_off"
@@ -205,7 +209,7 @@ def remote_on(config: Config, log: Log) -> None:
     open_rdp(config, log)
 
 
-def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
+def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> bool:
     require_config(config, ["ha_url", "ha_token", "plug_entity", "watt_entity", "ssh_target"])
 
     ha = HomeAssistant(config)
@@ -217,7 +221,7 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
 
     if plug == "off":
         log("Decision: plug is already off.")
-        return
+        return True
 
     if watt >= config.power_threshold_w:
         log(f"Decision: PC appears to be running. Sending shutdown over SSH to {config.ssh_target}.")
@@ -242,10 +246,24 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
 
         if low_count < config.power_off_low_confirmations:
             log("Timed out waiting for shutdown. Not cutting power.")
-            return
+            return False
+    else:
+        low_count = 1
+        log(f"Low power confirmation {low_count}/{config.power_off_low_confirmations}.")
+        while low_count < config.power_off_low_confirmations:
+            time.sleep(5)
+            watt = ha.watt()
+            log(f"Power={watt:g} W")
+            if watt < config.power_threshold_w:
+                low_count += 1
+                log(f"Low power confirmation {low_count}/{config.power_off_low_confirmations}.")
+            else:
+                log("Power recovered. Not cutting power.")
+                return False
 
     log(f"Decision: power is below {config.power_threshold_w:g} W, so turning plug off.")
     ha.set_plug("off")
+    return True
 
 
 def url_host(url: str) -> str:
@@ -380,7 +398,8 @@ def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | No
 
 def remote_hard_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     log("Starting hard reboot.")
-    remote_off(config, log, password_prompt)
+    if not remote_off(config, log, password_prompt):
+        raise ActionFailed("Remote shutdown was not confirmed")
     log("Turning plug back on.")
     HomeAssistant(config).set_plug("on")
     open_rdp(config, log)

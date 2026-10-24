@@ -7,106 +7,122 @@ Item {
 
     signal resetRequested()
 
-    ScrollView {
-        id: scroll
+    readonly property bool dark: Application.styleHints.colorScheme === Qt.Dark
+    readonly property color goodColor: dark ? "#6ccb5f" : "#0f7b0f"
+    readonly property color badColor: dark ? "#ff99a4" : "#c42b1c"
 
+    ColumnLayout {
         anchors.fill: parent
-        contentWidth: availableWidth
+        anchors.topMargin: 24
+        anchors.leftMargin: 16
+        anchors.rightMargin: 24
+        spacing: 12
 
-        ColumnLayout {
-            x: 16
-            y: 24
-            width: scroll.availableWidth - 40
-            spacing: 12
+        Label {
+            text: "Settings"
+            font.pixelSize: 28
+            font.weight: Font.DemiBold
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
 
             Label {
-                text: "Settings"
-                font.pixelSize: 28
-                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+                color: backend.notice.error ? page.badColor : palette.windowText
+                opacity: backend.notice.error ? 1 : 0.8
+                text: backend.notice.text || (backend.dirty ? "Unsaved changes" : "")
             }
+            Button {
+                text: "Reload"
+                onClicked: backend.loadSettings()
+            }
+            Button {
+                text: "Reset to defaults"
+                onClicked: page.resetRequested()
+            }
+            Button {
+                text: "Save"
+                highlighted: backend.dirty
+                onClicked: backend.saveSettings()
+            }
+        }
 
-            Repeater {
-                model: backend.settingGroups
+        ScrollView {
+            id: scroll
 
-                ColumnLayout {
-                    id: group
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            contentWidth: availableWidth
 
-                    required property var modelData
+            ColumnLayout {
+                width: scroll.availableWidth - 8
+                spacing: 6
 
-                    Layout.fillWidth: true
-                    Layout.topMargin: 8
-                    spacing: 6
+                Repeater {
+                    model: backend.settingGroups
 
-                    Label {
-                        text: group.modelData.title
-                        font.weight: Font.DemiBold
-                    }
+                    ColumnLayout {
+                        id: group
 
-                    Frame {
+                        required property var modelData
+
                         Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        spacing: 6
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            spacing: 10
+                        Label {
+                            text: group.modelData.title
+                            font.weight: Font.DemiBold
+                        }
 
-                            Repeater {
-                                model: group.modelData.fields
+                        Frame {
+                            Layout.fillWidth: true
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 14
+
+                                Repeater {
+                                    model: group.modelData.fields
+
+                                    SettingRow {
+                                        required property var modelData
+
+                                        Layout.fillWidth: true
+                                        field: modelData
+                                    }
+                                }
 
                                 RowLayout {
-                                    id: row
+                                    readonly property var result: backend.testResults[group.modelData.test]
 
-                                    required property var modelData
-                                    readonly property var field: modelData
-
+                                    visible: group.modelData.test !== ""
                                     Layout.fillWidth: true
-                                    spacing: 16
+                                    spacing: 12
 
+                                    Button {
+                                        text: group.modelData.testLabel
+                                        enabled: !backend.running
+                                        onClicked: backend.testSetting(group.modelData.test)
+                                    }
                                     Label {
-                                        text: row.field.key
-                                        Layout.preferredWidth: 230
-                                        elide: Text.ElideRight
-                                    }
-
-                                    TextField {
-                                        visible: row.field.choices.length === 0
                                         Layout.fillWidth: true
-                                        text: backend.values[row.field.key] || ""
-                                        placeholderText: row.field.placeholder
-                                        echoMode: row.field.secret ? TextInput.Password : TextInput.Normal
-                                        onTextEdited: backend.setValue(row.field.key, text)
-                                    }
-
-                                    ComboBox {
-                                        visible: row.field.choices.length > 0
-                                        Layout.fillWidth: true
-                                        model: row.field.choices
-                                        currentIndex: Math.max(0, row.field.choices.indexOf(backend.values[row.field.key]))
-                                        onActivated: backend.setValue(row.field.key, currentText)
+                                        wrapMode: Text.WordWrap
+                                        text: parent.result ? parent.result.text : "Uses the values above, even before saving."
+                                        color: parent.result ? (parent.result.ok ? page.goodColor : page.badColor) : palette.windowText
+                                        opacity: parent.result ? 1 : 0.7
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            RowLayout {
-                Layout.topMargin: 8
-                Layout.bottomMargin: 24
-                spacing: 8
-
-                Button {
-                    text: "Save .env"
-                    highlighted: true
-                    onClicked: backend.saveSettings()
-                }
-                Button {
-                    text: "Reload .env"
-                    onClicked: backend.loadSettings()
-                }
-                Button {
-                    text: "Reset Defaults"
-                    onClicked: page.resetRequested()
+                Item {
+                    Layout.preferredHeight: 16
                 }
             }
         }

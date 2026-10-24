@@ -24,7 +24,7 @@ from .actions import (
     test_home_assistant,
     test_rdp_host,
 )
-from .config import FIELDS, ROOT, load_config, load_env, save_env
+from .config import FIELDS, ROOT, Config, config_from_values, load_config, load_env, save_env
 from .theme import enable_mica, follow_color_scheme, mica_supported
 
 QML_DIR = Path(__file__).with_name("qml")
@@ -45,9 +45,39 @@ ACTIONS: dict[str, tuple[str, Callable, bool, str]] = {
     "test-rdp": ("Test RDP Port", test_rdp_host, False, ""),
 }
 
+# key: (label, description, kind). kind is text, secret, choice, int, or float.
+SETTINGS: dict[str, tuple[str, str, str]] = {
+    "HA_URL": ("Home Assistant URL", "Base address, for example http://ha.example.local:8123.", "text"),
+    "HA_TOKEN": ("Access token", "Long-lived access token from your Home Assistant profile.", "secret"),
+    "PLUG_ENTITY": ("Smart plug entity", "Switch entity that powers the target PC.", "text"),
+    "WATT_ENTITY": ("Power sensor entity", "Sensor that reports the plug's power draw in watts.", "text"),
+    "RDP_HOST": ("RDP host", "Host name or address of the target PC for Remote Desktop.", "text"),
+    "PC_SSH_TARGET": ("SSH target", "user@host used to shut down or reboot the target PC.", "text"),
+    "TARGET_OS": ("Target OS", "Operating system on the target PC.", "choice"),
+    "POWER_THRESHOLD_W": ("Running threshold (W)", "Power at or above this value means the PC is running.", "float"),
+    "RDP_WAIT_SECONDS": ("RDP wait (s)", "How long Remote On waits for RDP to answer.", "int"),
+    "SHUTDOWN_WAIT_SECONDS": (
+        "Shutdown wait (s)",
+        "How long Remote Off waits for power to drop. Plug power is not cut on timeout.",
+        "int",
+    ),
+    "PLUG_OFF_SECONDS": ("Plug off time (s)", "How long the plug stays off during a power cycle.", "int"),
+    "POWER_ON_LOW_CONFIRMATIONS": (
+        "Remote On low readings",
+        "Low readings in a row before Remote On power-cycles an on plug.",
+        "int",
+    ),
+    "POWER_OFF_LOW_CONFIRMATIONS": (
+        "Remote Off low readings",
+        "Low readings in a row before Remote Off cuts plug power.",
+        "int",
+    ),
+}
+
+# (title, keys, test action shown under the group)
 SETTING_GROUPS = [
-    ("Home Assistant", ["HA_URL", "HA_TOKEN", "PLUG_ENTITY", "WATT_ENTITY"]),
-    ("Target PC", ["RDP_HOST", "PC_SSH_TARGET", "TARGET_OS"]),
+    ("Home Assistant", ["HA_URL", "HA_TOKEN", "PLUG_ENTITY", "WATT_ENTITY"], "test-ha"),
+    ("Target PC", ["RDP_HOST", "PC_SSH_TARGET", "TARGET_OS"], "test-rdp"),
     (
         "Power Safety",
         [
@@ -58,6 +88,7 @@ SETTING_GROUPS = [
             "POWER_ON_LOW_CONFIRMATIONS",
             "POWER_OFF_LOW_CONFIRMATIONS",
         ],
+        "",
     ),
 ]
 
@@ -77,7 +108,6 @@ PLACEHOLDERS = {
     "POWER_OFF_LOW_CONFIRMATIONS": "4",
 }
 
-SECRET_FIELDS = {"HA_TOKEN"}
 CHOICES = {"TARGET_OS": ["windows", "linux"]}
 
 
@@ -140,6 +170,9 @@ class Backend(QObject):
     cancellingChanged = Signal()
     pcStatusChanged = Signal()
     valuesChanged = Signal()
+    dirtyChanged = Signal()
+    noticeChanged = Signal()
+    testResultsChanged = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -149,6 +182,12 @@ class Backend(QObject):
         self._label = ""
         self._worker: ActionWorker | None = None
         self._values: dict[str, str] = {}
+        self._saved: dict[str, str] = {}
+        self._dirty = False
+        self._notice: dict[str, object] = {"text": "", "error": False}
+        self._test_results: dict[str, dict[str, object]] = {}
+        self._test_id = ""
+        self._last_line = ""
         self._pc_status: dict[str, object] = {"plug": "", "watt": None, "rdp": None, "error": "", "updated": ""}
         self._probe: StatusProbe | None = None
         self._poll_timer: QTimer | None = None
@@ -169,21 +208,34 @@ class Backend(QObject):
     def _get_values(self) -> dict[str, str]:
         return self._values
 
+    def _get_dirty(self) -> bool:
+        return self._dirty
+
+    def _get_notice(self) -> dict[str, object]:
+        return self._notice
+
+    def _get_test_results(self) -> dict[str, dict[str, object]]:
+        return self._test_results
+
     def _get_setting_groups(self) -> list[dict]:
         return [
             {
                 "title": title,
+                "test": test,
+                "testLabel": ACTIONS[test][0] if test else "",
                 "fields": [
                     {
                         "key": key,
+                        "label": SETTINGS[key][0],
+                        "description": SETTINGS[key][1],
+                        "kind": SETTINGS[key][2],
                         "placeholder": PLACEHOLDERS.get(key, ""),
-                        "secret": key in SECRET_FIELDS,
                         "choices": CHOICES.get(key, []),
                     }
                     for key in keys
                 ],
             }
-            for title, keys in SETTING_GROUPS
+            for title, keys, test in SETTING_GROUPS
         ]
 
     status = Property(str, _get_status, notify=statusChanged)
@@ -191,6 +243,9 @@ class Backend(QObject):
     cancelling = Property(bool, _get_cancelling, notify=cancellingChanged)
     pcStatus = Property("QVariantMap", _get_pc_status, notify=pcStatusChanged)
     values = Property("QVariantMap", _get_values, notify=valuesChanged)
+    dirty = Property(bool, _get_dirty, notify=dirtyChanged)
+    notice = Property("QVariantMap", _get_notice, notify=noticeChanged)
+    testResults = Property("QVariantMap", _get_test_results, notify=testResultsChanged)
     settingGroups = Property("QVariantList", _get_setting_groups, constant=True)
 
     def log(self, text: str) -> None:
@@ -220,15 +275,37 @@ class Backend(QObject):
     def run(self, action_id: str) -> None:
         if self._running:
             return
-        label, action, needs_password, _confirm = ACTIONS[action_id]
+        label = ACTIONS[action_id][0]
         try:
             config = load_config()
         except RuntimeError as exc:
             self.log(f"Error: {exc}")
             self._set_status(f"{label} failed")
             return
+        self._start(action_id, config)
 
+    @Slot(str)
+    def testSetting(self, action_id: str) -> None:
+        """Run a connection test against the values in the Settings page, saved or not."""
+        if self._running:
+            return
+        try:
+            config = config_from_values(self._values)
+        except RuntimeError as exc:
+            self._set_test_result(action_id, str(exc), False)
+            return
+        self._set_test_result(action_id, "Testing...", True)
+        self._test_id = action_id
+        self._start(action_id, config)
+
+    def _set_test_result(self, action_id: str, text: str, ok: bool) -> None:
+        self._test_results = {**self._test_results, action_id: {"text": text, "ok": ok}}
+        self.testResultsChanged.emit()
+
+    def _start(self, action_id: str, config: Config) -> None:
+        label, action, needs_password, _confirm = ACTIONS[action_id]
         self._label = label
+        self._last_line = ""
         self.log(f"Running {label}.")
         self._set_status(f"Running {label}")
         if needs_password:
@@ -244,6 +321,7 @@ class Backend(QObject):
 
     @Slot(str)
     def _on_line(self, text: str) -> None:
+        self._last_line = text
         self.log(text)
 
     @Slot()
@@ -260,6 +338,10 @@ class Backend(QObject):
         outcome = {0: "completed", 2: "cancelled"}.get(code, "failed")
         self.log(f"{self._label} {outcome}.")
         self._set_status(f"{self._label} {outcome}")
+        if self._test_id:
+            result = self._last_line.removeprefix("Error: ").rstrip(".") or outcome
+            self._set_test_result(self._test_id, result, code == 0)
+            self._test_id = ""
         self._set_cancelling(False)
         self._set_running(False)
 
@@ -292,6 +374,17 @@ class Backend(QObject):
     @Slot(str, str)
     def setValue(self, key: str, value: str) -> None:
         self._values[key] = value
+        self._update_dirty()
+
+    def _update_dirty(self) -> None:
+        dirty = any(self._values.get(key, "") != self._saved.get(key, "") for key in FIELDS)
+        if dirty != self._dirty:
+            self._dirty = dirty
+            self.dirtyChanged.emit()
+
+    def _set_notice(self, text: str, error: bool = False) -> None:
+        self._notice = {"text": text, "error": error}
+        self.noticeChanged.emit()
 
     @Slot()
     def loadSettings(self) -> None:
@@ -300,11 +393,25 @@ class Backend(QObject):
         if values["TARGET_OS"] not in CHOICES["TARGET_OS"]:
             values["TARGET_OS"] = "windows"
         self._values = values
+        self._saved = dict(values)
         self.valuesChanged.emit()
+        self._update_dirty()
+        self._set_notice("")
 
     @Slot()
     def saveSettings(self) -> None:
-        save_env({key: self._values.get(key, "").strip() for key in FIELDS})
+        values = {key: self._values.get(key, "").strip() for key in FIELDS}
+        try:
+            config_from_values(values)
+        except RuntimeError as exc:
+            self._set_notice(f"Not saved: {exc}", error=True)
+            return
+        save_env(values)
+        self._values = values
+        self._saved = dict(values)
+        self.valuesChanged.emit()
+        self._update_dirty()
+        self._set_notice("Saved.")
         self.log("Saved .env.")
         if self._poll_timer is not None:
             self.refreshStatus()
@@ -313,7 +420,8 @@ class Backend(QObject):
     def resetDefaults(self) -> None:
         self._values = {key: PLACEHOLDERS.get(key, "") for key in FIELDS}
         self.valuesChanged.emit()
-        self.log("Reset settings fields to defaults. Save .env to apply.")
+        self._update_dirty()
+        self._set_notice("Example defaults filled in. Save to apply.")
 
 
 def main() -> None:

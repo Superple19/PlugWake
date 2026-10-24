@@ -192,8 +192,10 @@ uv run ruff format --check .
 | Remote Off | `off` | Shuts the OS down over SSH, waits for low power, then turns the plug off |
 | Soft Reboot | `reboot` | Sends an OS reboot over SSH |
 | Hard Reboot | `hard-reboot` | Runs Remote Off, turns the plug back on, then opens RDP |
-| Test Home Assistant | `test-ha` | Checks the Home Assistant API and token |
-| Test RDP Port | `test-rdp` | Checks TCP port 3389 only; it does not perform an RDP login |
+| Test Home Assistant (Settings) | `test-ha` | Checks the Home Assistant API and token |
+| Test RDP Port (Settings) | `test-rdp` | Checks TCP port 3389 only; it does not perform an RDP login |
+
+In the GUI, the test buttons sit under their Settings groups and use the values on screen, even before you save. Save checks number fields first and refuses to write `.env` if any value is invalid.
 
 Commands exit with code 1 when they stop without finishing, for example when Remote Off does not cut plug power.
 

@@ -55,3 +55,15 @@ def test_load_config_reads_values_from_env_file(monkeypatch: pytest.MonkeyPatch,
     assert loaded.ha_url == "http://ha.example.local:8123"
     assert loaded.target_os == "linux"
     assert loaded.shutdown_wait_seconds == 120
+
+
+def test_config_from_values_uses_defaults_for_blank_numbers() -> None:
+    loaded = config.config_from_values({"RDP_WAIT_SECONDS": "", "PLUG_OFF_SECONDS": " 12 "})
+
+    assert loaded.rdp_wait_seconds == 180
+    assert loaded.plug_off_seconds == 12
+
+
+def test_config_from_values_names_the_bad_number() -> None:
+    with pytest.raises(RuntimeError, match="POWER_THRESHOLD_W must be a number"):
+        config.config_from_values({"POWER_THRESHOLD_W": "five"})

@@ -73,16 +73,24 @@ def save_env(values: dict[str, str]) -> None:
 
 
 def load_config() -> Config:
-    values = load_env()
+    return config_from_values(load_env())
+
+
+def number(values: dict[str, str], key: str, kind: type[int] | type[float]) -> int | float:
+    raw = (values.get(key) or DEFAULTS[key]).strip()
     try:
-        power_threshold_w = float(values.get("POWER_THRESHOLD_W", "5"))
-        rdp_wait_seconds = int(values.get("RDP_WAIT_SECONDS", "180"))
-        shutdown_wait_seconds = int(values.get("SHUTDOWN_WAIT_SECONDS", "300"))
-        plug_off_seconds = int(values.get("PLUG_OFF_SECONDS", "10"))
-        power_on_low_confirmations = int(values.get("POWER_ON_LOW_CONFIRMATIONS", "3"))
-        power_off_low_confirmations = int(values.get("POWER_OFF_LOW_CONFIRMATIONS", "4"))
+        return kind(raw)
     except ValueError as exc:
-        raise RuntimeError("Numeric settings in .env are invalid") from exc
+        raise RuntimeError(f"{key} must be a number") from exc
+
+
+def config_from_values(values: dict[str, str]) -> Config:
+    power_threshold_w = number(values, "POWER_THRESHOLD_W", float)
+    rdp_wait_seconds = number(values, "RDP_WAIT_SECONDS", int)
+    shutdown_wait_seconds = number(values, "SHUTDOWN_WAIT_SECONDS", int)
+    plug_off_seconds = number(values, "PLUG_OFF_SECONDS", int)
+    power_on_low_confirmations = number(values, "POWER_ON_LOW_CONFIRMATIONS", int)
+    power_off_low_confirmations = number(values, "POWER_OFF_LOW_CONFIRMATIONS", int)
 
     if not math.isfinite(power_threshold_w) or power_threshold_w < 0:
         raise RuntimeError("POWER_THRESHOLD_W must be a finite non-negative number")
@@ -104,7 +112,7 @@ def load_config() -> Config:
         watt_entity=values.get("WATT_ENTITY", ""),
         rdp_host=values.get("RDP_HOST", ""),
         ssh_target=values.get("PC_SSH_TARGET", ""),
-        target_os=values.get("TARGET_OS", "windows").strip().lower(),
+        target_os=(values.get("TARGET_OS") or "windows").strip().lower(),
         power_threshold_w=power_threshold_w,
         rdp_wait_seconds=rdp_wait_seconds,
         shutdown_wait_seconds=shutdown_wait_seconds,

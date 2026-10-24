@@ -159,18 +159,6 @@ Item {
                     Item {
                         Layout.fillWidth: true
                     }
-                    Button {
-                        text: "Test Home Assistant"
-                        flat: true
-                        enabled: !backend.running
-                        onClicked: page.actionRequested("test-ha")
-                    }
-                    Button {
-                        text: "Test RDP Port"
-                        flat: true
-                        enabled: !backend.running
-                        onClicked: page.actionRequested("test-rdp")
-                    }
                 }
             }
         }

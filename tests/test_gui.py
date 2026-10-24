@@ -109,3 +109,53 @@ def test_status_probe_reports_invalid_settings(monkeypatch: pytest.MonkeyPatch) 
 
     assert results[0]["error"] == "PLUG_OFF_SECONDS must be greater than zero"
     assert results[0]["updated"]
+
+
+def test_backend_tracks_unsaved_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gui, "load_env", lambda: {"RDP_HOST": "target-pc"})
+    monkeypatch.setattr(gui, "save_env", lambda _values: None)
+    backend = gui.Backend()
+
+    assert backend.dirty is False
+    backend.setValue("RDP_HOST", "other-pc")
+    assert backend.dirty is True
+    backend.setValue("RDP_HOST", "target-pc")
+    assert backend.dirty is False
+    backend.setValue("RDP_HOST", "other-pc")
+    backend.saveSettings()
+    assert backend.dirty is False
+    assert backend.notice == {"text": "Saved.", "error": False}
+
+
+def test_backend_refuses_to_save_invalid_numbers(monkeypatch: pytest.MonkeyPatch) -> None:
+    saved: list[dict[str, str]] = []
+    monkeypatch.setattr(gui, "load_env", lambda: {})
+    monkeypatch.setattr(gui, "save_env", saved.append)
+    backend = gui.Backend()
+
+    backend.setValue("PLUG_OFF_SECONDS", "0")
+    backend.saveSettings()
+
+    assert saved == []
+    assert backend.dirty is True
+    assert backend.notice == {"text": "Not saved: PLUG_OFF_SECONDS must be greater than zero", "error": True}
+
+
+def test_setting_test_uses_unsaved_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    started: list[tuple[str, str]] = []
+    monkeypatch.setattr(gui, "load_env", lambda: {"RDP_HOST": "saved-pc"})
+    monkeypatch.setattr(
+        gui.Backend, "_start", lambda _self, action_id, config: started.append((action_id, config.rdp_host))
+    )
+    backend = gui.Backend()
+
+    backend.setValue("RDP_HOST", "draft-pc")
+    backend.testSetting("test-rdp")
+
+    assert started == [("test-rdp", "draft-pc")]
+    assert backend.testResults["test-rdp"] == {"text": "Testing...", "ok": True}
+
+
+def test_setting_metadata_covers_every_field() -> None:
+    assert set(gui.SETTINGS) == set(gui.FIELDS)
+    assert all(kind in {"text", "secret", "choice", "int", "float"} for _label, _desc, kind in gui.SETTINGS.values())

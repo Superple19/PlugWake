@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-import pytest
+import threading
+import time
 
-from plugwake import gui
+import pytest
+from PySide6.QtCore import QCoreApplication
+
+from plugwake import actions, gui
 
 
 def test_setting_groups_cover_every_env_field_once() -> None:
@@ -49,3 +53,44 @@ def test_every_action_has_a_label_and_known_confirmation() -> None:
     assert backend.confirmText("on") == ""
     assert "Shut down" in backend.confirmText("off")
     assert all(backend.actionLabel(action_id) for action_id in gui.ACTIONS)
+
+
+def test_worker_reports_cancellation_with_its_own_exit_code() -> None:
+    codes: list[int] = []
+    lines: list[str] = []
+
+    def action(_log: object) -> None:
+        worker.token.cancel()
+        actions.pause(1)
+
+    worker = gui.ActionWorker(action)
+    worker.done.connect(codes.append)
+    worker.line.connect(lines.append)
+    worker.run()
+
+    assert codes == [2]
+    assert lines == ["Cancelled by user."]
+
+
+def test_backend_cancel_stops_a_running_action(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = QCoreApplication.instance() or QCoreApplication([])
+    started = threading.Event()
+
+    def slow_action(_config: object, _log: object) -> None:
+        started.set()
+        actions.pause(30)
+
+    monkeypatch.setattr(gui, "load_config", lambda: None)
+    monkeypatch.setitem(gui.ACTIONS, "on", ("Remote On", slow_action, False, ""))
+    backend = gui.Backend()
+
+    backend.run("on")
+    assert started.wait(5)
+    backend.cancel()
+    deadline = time.monotonic() + 5
+    while backend.running and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+
+    assert backend.running is False
+    assert backend.status == "Remote On cancelled"

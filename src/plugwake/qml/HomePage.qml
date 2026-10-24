@@ -57,6 +57,12 @@ Item {
                         elide: Text.ElideRight
                     }
                 }
+                Button {
+                    visible: backend.running
+                    enabled: !backend.cancelling
+                    text: backend.cancelling ? "Cancelling..." : "Cancel"
+                    onClicked: backend.cancel()
+                }
             }
         }
 

@@ -23,6 +23,7 @@ Core responsibilities:
 - Remote Off must shut down through the OS first, then require repeated low-power confirmation before plug cutoff.
 - If Home Assistant, SSH, or the power sensor fails, prefer doing nothing over cutting power.
 - Remote On may power-cycle an on plug when RDP is unreachable and repeated low-power readings indicate that the target PC is off.
+- Cancellation stops only at safe points. Wrap plug power sequences in `critical()` so a cancel never leaves a power cycle or Hard Reboot with the plug off.
 
 ## Public Defaults
 

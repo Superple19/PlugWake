@@ -12,7 +12,17 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
+from .actions import (
+    ActionCancelled,
+    CancelToken,
+    cancellable,
+    remote_hard_reboot,
+    remote_off,
+    remote_on,
+    remote_reboot,
+    test_home_assistant,
+    test_rdp_host,
+)
 from .config import FIELDS, ROOT, load_config, load_env, save_env
 from .theme import enable_mica, follow_color_scheme, mica_supported
 
@@ -82,10 +92,16 @@ class ActionWorker(QThread):
         super().__init__()
         self.action = action
         self.password: str | None = None
+        self.token = CancelToken()
 
     def run(self) -> None:
         try:
-            self.action(self.line.emit)
+            with cancellable(self.token):
+                self.action(self.line.emit)
+        except ActionCancelled as exc:
+            self.line.emit(f"{exc}.")
+            self.done.emit(2)
+            return
         except Exception as exc:
             self.line.emit(f"Error: {exc}")
             self.done.emit(1)
@@ -96,6 +112,8 @@ class ActionWorker(QThread):
         self.password = None
         self.password_requested.emit(target)
         while self.password is None:
+            if self.token.requested:
+                return ""
             self.msleep(50)
         return self.password
 
@@ -105,12 +123,14 @@ class Backend(QObject):
     passwordRequested = Signal(str)
     statusChanged = Signal()
     runningChanged = Signal()
+    cancellingChanged = Signal()
     valuesChanged = Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self._status = "Ready"
         self._running = False
+        self._cancelling = False
         self._label = ""
         self._worker: ActionWorker | None = None
         self._values: dict[str, str] = {}
@@ -121,6 +141,9 @@ class Backend(QObject):
 
     def _get_running(self) -> bool:
         return self._running
+
+    def _get_cancelling(self) -> bool:
+        return self._cancelling
 
     def _get_values(self) -> dict[str, str]:
         return self._values
@@ -144,6 +167,7 @@ class Backend(QObject):
 
     status = Property(str, _get_status, notify=statusChanged)
     running = Property(bool, _get_running, notify=runningChanged)
+    cancelling = Property(bool, _get_cancelling, notify=cancellingChanged)
     values = Property("QVariantMap", _get_values, notify=valuesChanged)
     settingGroups = Property("QVariantList", _get_setting_groups, constant=True)
 
@@ -157,6 +181,10 @@ class Backend(QObject):
     def _set_running(self, running: bool) -> None:
         self._running = running
         self.runningChanged.emit()
+
+    def _set_cancelling(self, cancelling: bool) -> None:
+        self._cancelling = cancelling
+        self.cancellingChanged.emit()
 
     @Slot(str, result=str)
     def confirmText(self, action_id: str) -> str:
@@ -196,10 +224,21 @@ class Backend(QObject):
     def _on_line(self, text: str) -> None:
         self.log(text)
 
+    @Slot()
+    def cancel(self) -> None:
+        if not self._running or self._cancelling or self._worker is None:
+            return
+        self._worker.token.cancel()
+        self._set_cancelling(True)
+        self.log("Cancel requested. Stopping at the next safe point.")
+        self._set_status(f"Cancelling {self._label}")
+
     @Slot(int)
     def _on_done(self, code: int) -> None:
-        self.log(f"{self._label} exited with code {code}.")
-        self._set_status(f"{self._label} {'completed' if code == 0 else 'failed'}")
+        outcome = {0: "completed", 2: "cancelled"}.get(code, "failed")
+        self.log(f"{self._label} {outcome}.")
+        self._set_status(f"{self._label} {outcome}")
+        self._set_cancelling(False)
         self._set_running(False)
 
     @Slot(str, bool)

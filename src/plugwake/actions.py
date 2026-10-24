@@ -7,11 +7,14 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import paramiko
 
@@ -76,6 +79,72 @@ class HomeAssistant:
 
 class ActionFailed(RuntimeError):
     pass
+
+
+class ActionCancelled(ActionFailed):
+    pass
+
+
+class CancelToken:
+    """Cooperative cancellation that only stops at safe points outside critical sections."""
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+        self._critical = 0
+
+    def cancel(self) -> None:
+        self._event.set()
+
+    @property
+    def requested(self) -> bool:
+        return self._event.is_set()
+
+    def check(self) -> None:
+        if self._event.is_set() and self._critical == 0:
+            raise ActionCancelled("Cancelled by user")
+
+
+_cancel_token: ContextVar[CancelToken | None] = ContextVar("cancel_token", default=None)
+
+
+@contextmanager
+def cancellable(token: CancelToken) -> Iterator[None]:
+    reset = _cancel_token.set(token)
+    try:
+        yield
+    finally:
+        _cancel_token.reset(reset)
+
+
+@contextmanager
+def critical() -> Iterator[None]:
+    """Defer cancellation until a plug power sequence has finished."""
+    token = _cancel_token.get()
+    if token is not None:
+        token._critical += 1
+    try:
+        yield
+    finally:
+        if token is not None:
+            token._critical -= 1
+
+
+def checkpoint() -> None:
+    token = _cancel_token.get()
+    if token is not None:
+        token.check()
+
+
+def pause(seconds: float) -> None:
+    token = _cancel_token.get()
+    if token is None:
+        time.sleep(seconds)
+        return
+    deadline = time.monotonic() + seconds
+    while (remaining := deadline - time.monotonic()) > 0:
+        token.check()
+        time.sleep(min(remaining, 0.2))
+    token.check()
 
 
 def require_plug_state(state: str) -> str:
@@ -151,6 +220,7 @@ def rdp_is_open(host: str) -> bool:
 
 
 def open_rdp(config: Config, log: Log) -> None:
+    checkpoint()
     if rdp_is_open(config.rdp_host):
         log(f"RDP is already open for {config.rdp_host}.")
         return
@@ -166,7 +236,7 @@ def open_rdp(config: Config, log: Log) -> None:
             subprocess.Popen(command)
             return
         log(f"RDP on {config.rdp_host} not ready {progress(elapsed, config.rdp_wait_seconds, 's')}.")
-        time.sleep(5)
+        pause(5)
     raise ActionFailed(f"RDP on {config.rdp_host} was not ready within {config.rdp_wait_seconds} seconds")
 
 
@@ -224,7 +294,7 @@ def confirm_sustained_low_power(ha: HomeAssistant, config: Config, log: Log, wat
     low_count = 1
     log_power(log, watt, f"low {progress(low_count, needed)}")
     while low_count < needed:
-        time.sleep(5)
+        pause(5)
         watt = ha.watt()
         if watt >= config.power_threshold_w:
             return watt
@@ -241,6 +311,7 @@ def remote_on(config: Config, log: Log) -> None:
     plug, watt = read_plug_and_power(ha, config, log)
 
     if plug == "off":
+        checkpoint()
         log("Decision: plug is off, so turning it on.")
         turn_plug_on(ha, config)
         open_rdp(config, log)
@@ -266,10 +337,12 @@ def remote_on(config: Config, log: Log) -> None:
         open_rdp(config, log)
         return
 
+    checkpoint()
     log(f"Decision: power stayed below {config.power_threshold_w:g} W, so power-cycling the plug.")
-    turn_plug_off(ha, config)
-    wait_with_plug_off(config, log)
-    turn_plug_on(ha, config)
+    with critical():
+        turn_plug_off(ha, config)
+        wait_with_plug_off(config, log)
+        turn_plug_on(ha, config)
     open_rdp(config, log)
 
 
@@ -285,6 +358,7 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
         return
 
     if watt >= config.power_threshold_w:
+        checkpoint()
         log(f"Decision: PC appears to be running. Sending shutdown over SSH to {config.ssh_target}.")
         if not ssh_shutdown(config, log, password_prompt):
             raise ssh_failure("SSH shutdown failed", tailscale)
@@ -302,8 +376,10 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
         if recovered is not None:
             raise ActionFailed(f"Power recovered to {recovered:g} W. Not cutting plug power")
 
+    checkpoint()
     log(f"Decision: power is below {config.power_threshold_w:g} W, so turning plug off.")
-    turn_plug_off(ha, config)
+    with critical():
+        turn_plug_off(ha, config)
 
 
 def wait_for_shutdown(ha: HomeAssistant, config: Config, log: Log) -> None:
@@ -311,7 +387,7 @@ def wait_for_shutdown(ha: HomeAssistant, config: Config, log: Log) -> None:
     start = time.monotonic()
     low_count = 0
     while time.monotonic() - start < config.shutdown_wait_seconds:
-        time.sleep(5)
+        pause(5)
         elapsed = time.monotonic() - start
         watt = ha.watt()
         if watt < config.power_threshold_w:
@@ -327,7 +403,7 @@ def wait_for_shutdown(ha: HomeAssistant, config: Config, log: Log) -> None:
 
 def wait_with_plug_off(config: Config, log: Log) -> None:
     log(f"Plug is off. Waiting {config.plug_off_seconds} seconds before turning it back on.")
-    time.sleep(config.plug_off_seconds)
+    pause(config.plug_off_seconds)
 
 
 def turn_plug_on(ha: HomeAssistant, config: Config) -> None:
@@ -505,6 +581,7 @@ def connect_ssh(
 def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     require_config(config, ["ssh_target"])
     tailscale = check_network(config, log, need_ha=False)
+    checkpoint()
     log(f"Rebooting target PC over SSH: {config.ssh_target}")
     if not run_power_command(config, reboot_command(config), log, password_prompt):
         raise ssh_failure("Failed to reboot target PC", tailscale)
@@ -513,7 +590,8 @@ def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | No
 def remote_hard_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     log("Starting hard reboot.")
     remote_off(config, log, password_prompt)
-    wait_with_plug_off(config, log)
-    log("Turning plug back on.")
-    turn_plug_on(HomeAssistant(config), config)
+    with critical():
+        wait_with_plug_off(config, log)
+        log("Turning plug back on.")
+        turn_plug_on(HomeAssistant(config), config)
     open_rdp(config, log)

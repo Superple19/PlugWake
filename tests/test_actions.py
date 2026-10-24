@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from types import SimpleNamespace
 
 import pytest
@@ -433,3 +434,64 @@ def test_remote_off_ssh_failure_mentions_disconnected_tailscale(monkeypatch: pyt
 
     with pytest.raises(actions.ActionFailed, match="SSH shutdown failed. Tailscale is also not connected"):
         actions.remote_off(make_config(), lambda _message: None)
+
+
+def test_pause_stops_when_cancel_is_requested() -> None:
+    token = actions.CancelToken()
+    token.cancel()
+
+    with actions.cancellable(token), pytest.raises(actions.ActionCancelled):
+        actions.pause(5)
+
+
+def test_critical_section_defers_cancel_until_it_ends(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = actions.CancelToken()
+    token.cancel()
+    finished: list[str] = []
+    monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
+
+    with actions.cancellable(token):
+        with actions.critical():
+            actions.pause(0.01)
+            finished.append("power cycle")
+        with pytest.raises(actions.ActionCancelled):
+            actions.checkpoint()
+
+    assert finished == ["power cycle"]
+
+
+def test_cancel_during_low_power_check_leaves_plug_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(power_on_low_confirmations=3)
+    events = fake_plug(monkeypatch, [1.0, 1.0, 1.0])
+    monkeypatch.setattr(actions, "tcp_open", lambda host, *_args, **_kwargs: host != config.rdp_host)
+    token = actions.CancelToken()
+    monkeypatch.setattr(actions.time, "sleep", lambda _seconds: token.cancel())
+
+    with actions.cancellable(token), pytest.raises(actions.ActionCancelled):
+        actions.remote_on(config, lambda _message: None)
+
+    assert not any(event.startswith("plug") for event in events)
+
+
+def test_cancel_during_power_cycle_still_turns_plug_back_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(power_on_low_confirmations=1)
+    events = fake_plug(monkeypatch, [1.0])
+    monkeypatch.setattr(actions, "tcp_open", lambda host, *_args, **_kwargs: host != config.rdp_host)
+    token = actions.CancelToken()
+
+    def set_plug(_self: actions.HomeAssistant, state: str) -> None:
+        events.append(f"plug {state}")
+        plug_state["state"] = state
+        token.cancel()
+
+    plug_state = {"state": "on"}
+    monkeypatch.setattr(actions.HomeAssistant, "state", lambda _self, _entity: plug_state["state"])
+    monkeypatch.setattr(actions.HomeAssistant, "set_plug", set_plug)
+    monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(actions, "open_rdp", lambda *_args: actions.checkpoint())
+    monkeypatch.setattr(actions.time, "monotonic", itertools.count().__next__)
+
+    with actions.cancellable(token), pytest.raises(actions.ActionCancelled):
+        actions.remote_on(config, lambda _message: None)
+
+    assert events == ["plug off", "plug on"]

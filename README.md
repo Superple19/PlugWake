@@ -216,6 +216,7 @@ bash setup_shortcuts.sh
 - Remote Off waits for repeated low-power readings before switching the plug off.
 - If Home Assistant, SSH, or the power sensor fails, PlugWake prefers doing nothing over cutting power.
 - When the plug is on, RDP is unreachable, and low power is repeatedly confirmed, Remote On power-cycles the plug to start the PC.
+- The GUI Cancel button stops a running action at the next safe point. A plug power cycle, or Hard Reboot's off-and-on step, always finishes before the cancel takes effect.
 
 ## Files
 

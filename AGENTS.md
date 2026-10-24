@@ -42,7 +42,7 @@ Use only public-safe placeholder values in committed files:
 Before committing code changes, run the smallest relevant checks:
 
 ```bat
-.venv\Scripts\python.exe -m py_compile src\plugwake\config.py src\plugwake\actions.py src\plugwake\cli.py src\plugwake\gui.py src\plugwake\theme.py
+.venv\Scripts\python.exe -m py_compile src\plugwake\config.py src\plugwake\actions.py src\plugwake\cli.py src\plugwake\gui.py src\plugwake\theme.py src\plugwake\i18n.py
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
@@ -94,6 +94,8 @@ User-facing log lines come from `src/plugwake/actions.py`. Keep them consistent:
 - Say how often a wait checks once, when the wait starts, not on every line.
 - Use "target PC", "RDP on <host>", "smart plug", and "Home Assistant" consistently.
 - Safety stops that leave plug power on end with `Not cutting plug power`.
+- GUI text is English in code and goes through `t()` in QML or `Backend.tr()` in Python. Add a Korean entry to `i18n.KO` for every new GUI string; `tests/test_i18n.py` fails otherwise.
+- Log lines stay in English in both the CLI and the GUI.
 
 ## Commit Style
 

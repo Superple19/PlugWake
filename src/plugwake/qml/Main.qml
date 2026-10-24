@@ -17,6 +17,10 @@ ApplicationWindow {
     title: "PlugWake"
     color: micaActive ? "transparent" : palette.window
 
+    function t(text) {
+        return backend.strings[text] || text
+    }
+
     function confirm(title, text, onYes) {
         confirmDialog.title = title
         confirmLabel.text = text
@@ -70,7 +74,7 @@ ApplicationWindow {
                     required property int index
 
                     Layout.fillWidth: true
-                    text: modelData
+                    text: window.t(modelData)
                     highlighted: window.page === index
                     onClicked: window.page = index
                 }
@@ -92,8 +96,8 @@ ApplicationWindow {
 
             SettingsPage {
                 onResetRequested: window.confirm(
-                    "Reset Defaults",
-                    "Reset settings fields to example defaults? This will not save .env yet.",
+                    window.t("Reset to defaults"),
+                    window.t("Reset settings fields to example defaults? This will not save .env yet."),
                     () => backend.resetDefaults())
             }
         }
@@ -105,7 +109,16 @@ ApplicationWindow {
         anchors.centerIn: Overlay.overlay
         width: Math.min(440, window.width - 48)
         modal: true
-        standardButtons: Dialog.Yes | Dialog.No
+        footer: DialogButtonBox {
+            Button {
+                text: window.t("Yes")
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: window.t("No")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
         onAccepted: {
             if (window.pendingConfirm)
                 window.pendingConfirm()
@@ -130,8 +143,17 @@ ApplicationWindow {
         anchors.centerIn: Overlay.overlay
         width: Math.min(440, window.width - 48)
         modal: true
-        title: "Password"
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        title: window.t("Password")
+        footer: DialogButtonBox {
+            Button {
+                text: window.t("OK")
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: window.t("Cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
         onOpened: {
             answered = false
             passwordField.clear()
@@ -151,7 +173,7 @@ ApplicationWindow {
             spacing: 8
 
             Label {
-                text: "Password for " + passwordDialog.target
+                text: window.t("Password for %1").arg(passwordDialog.target)
                 Layout.fillWidth: true
                 wrapMode: Text.WrapAnywhere
             }

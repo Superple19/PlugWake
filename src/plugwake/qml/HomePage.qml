@@ -7,6 +7,10 @@ Item {
 
     signal actionRequested(string actionId)
 
+    function t(text) {
+        return backend.strings[text] || text
+    }
+
     readonly property color dangerColor: Application.styleHints.colorScheme === Qt.Dark ? "#ff99a4" : "#c42b1c"
 
     ColumnLayout {
@@ -16,7 +20,7 @@ Item {
         spacing: 12
 
         Label {
-            text: "Home"
+            text: page.t("Home")
             font.pixelSize: 28
             font.weight: Font.DemiBold
         }
@@ -35,25 +39,25 @@ Item {
                     StatusTile {
                         readonly property string plug: backend.pcStatus.plug || ""
 
-                        title: "Smart plug"
+                        title: page.t("Smart plug")
                         known: plug !== ""
                         good: plug === "on"
-                        value: plug === "on" ? "On" : plug === "off" ? "Off" : "Unknown"
+                        value: page.t(plug === "on" ? "On" : plug === "off" ? "Off" : "Unknown")
                     }
                     StatusTile {
                         readonly property var watt: backend.pcStatus.watt
 
-                        title: "Power"
+                        title: page.t("Power")
                         known: false
-                        value: watt === null || watt === undefined ? "Unknown" : Number(watt).toFixed(1) + " W"
+                        value: watt === null || watt === undefined ? page.t("Unknown") : Number(watt).toFixed(1) + " W"
                     }
                     StatusTile {
                         readonly property var rdp: backend.pcStatus.rdp
 
-                        title: "Remote desktop"
+                        title: page.t("Remote desktop")
                         known: rdp === true || rdp === false
                         good: rdp === true
-                        value: rdp === true ? "Ready" : rdp === false ? "Not reachable" : "Unknown"
+                        value: page.t(rdp === true ? "Ready" : rdp === false ? "Not reachable" : "Unknown")
                     }
                 }
 
@@ -92,17 +96,19 @@ Item {
                         elide: Text.ElideRight
                         text: backend.pcStatus.error
                             ? backend.pcStatus.error
-                            : backend.pcStatus.updated ? "Updated " + backend.pcStatus.updated : "Checking..."
+                            : backend.pcStatus.updated
+                                ? page.t("Updated %1").arg(backend.pcStatus.updated)
+                                : page.t("Checking...")
                     }
                     Button {
-                        text: "Refresh"
+                        text: page.t("Refresh")
                         flat: true
                         onClicked: backend.refreshStatus()
                     }
                     Button {
                         visible: backend.running
                         enabled: !backend.cancelling
-                        text: backend.cancelling ? "Cancelling..." : "Cancel"
+                        text: page.t(backend.cancelling ? "Cancelling..." : "Cancel")
                         onClicked: backend.cancel()
                     }
                 }
@@ -117,7 +123,7 @@ Item {
                 spacing: 12
 
                 Label {
-                    text: "Power"
+                    text: page.t("Power controls")
                     font.weight: Font.DemiBold
                 }
 
@@ -127,14 +133,14 @@ Item {
 
                     Button {
                         Layout.fillWidth: true
-                        text: "Remote On"
+                        text: page.t("Remote On")
                         highlighted: true
                         enabled: !backend.running
                         onClicked: page.actionRequested("on")
                     }
                     Button {
                         Layout.fillWidth: true
-                        text: "Remote Off"
+                        text: page.t("Remote Off")
                         enabled: !backend.running
                         onClicked: page.actionRequested("off")
                     }
@@ -145,12 +151,12 @@ Item {
                     spacing: 8
 
                     Button {
-                        text: "Soft Reboot"
+                        text: page.t("Soft Reboot")
                         enabled: !backend.running
                         onClicked: page.actionRequested("reboot")
                     }
                     Button {
-                        text: "Hard Reboot"
+                        text: page.t("Hard Reboot")
                         enabled: !backend.running
                         palette.active.buttonText: page.dangerColor
                         palette.inactive.buttonText: page.dangerColor
@@ -175,12 +181,12 @@ Item {
                     Layout.fillWidth: true
 
                     Label {
-                        text: "Log"
+                        text: page.t("Log")
                         font.weight: Font.DemiBold
                         Layout.fillWidth: true
                     }
                     Button {
-                        text: "Clear"
+                        text: page.t("Clear")
                         flat: true
                         onClicked: logArea.clear()
                     }

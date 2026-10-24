@@ -167,6 +167,8 @@ The GUI is built with Qt Quick and the [FluentWinUI3 style](https://doc.qt.io/qt
 
 The Home page shows the smart plug state, current power, and whether RDP port 3389 answers. It refreshes every 15 seconds in the background and only reads; it never switches the plug.
 
+The GUI is available in English and Korean. Settings → App → Language follows the system language by default and switches right away. The choice is stored as a per-user app preference, not in `.env`. Log lines stay in English.
+
 CLI:
 
 ```bash

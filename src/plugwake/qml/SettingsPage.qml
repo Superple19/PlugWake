@@ -7,6 +7,10 @@ Item {
 
     signal resetRequested()
 
+    function t(text) {
+        return backend.strings[text] || text
+    }
+
     readonly property bool dark: Application.styleHints.colorScheme === Qt.Dark
     readonly property color goodColor: dark ? "#6ccb5f" : "#0f7b0f"
     readonly property color badColor: dark ? "#ff99a4" : "#c42b1c"
@@ -19,7 +23,7 @@ Item {
         spacing: 12
 
         Label {
-            text: "Settings"
+            text: page.t("Settings")
             font.pixelSize: 28
             font.weight: Font.DemiBold
         }
@@ -33,18 +37,18 @@ Item {
                 elide: Text.ElideRight
                 color: backend.notice.error ? page.badColor : palette.windowText
                 opacity: backend.notice.error ? 1 : 0.8
-                text: backend.notice.text || (backend.dirty ? "Unsaved changes" : "")
+                text: backend.notice.text || (backend.dirty ? page.t("Unsaved changes") : "")
             }
             Button {
-                text: "Reload"
+                text: page.t("Reload")
                 onClicked: backend.loadSettings()
             }
             Button {
-                text: "Reset to defaults"
+                text: page.t("Reset to defaults")
                 onClicked: page.resetRequested()
             }
             Button {
-                text: "Save"
+                text: page.t("Save")
                 highlighted: backend.dirty
                 onClicked: backend.saveSettings()
             }
@@ -60,6 +64,47 @@ Item {
             ColumnLayout {
                 width: scroll.availableWidth - 8
                 spacing: 6
+
+                Label {
+                    Layout.topMargin: 8
+                    text: page.t("App")
+                    font.weight: Font.DemiBold
+                }
+
+                Frame {
+                    Layout.fillWidth: true
+
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: 24
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: page.t("Language")
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: page.t("Applies right away. Logs stay in English.")
+                                opacity: 0.7
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+
+                        ComboBox {
+                            readonly property var codes: ["system", "en", "ko"]
+
+                            Layout.preferredWidth: 300
+                            model: [page.t("Use system language"), "English", "한국어"]
+                            currentIndex: Math.max(0, codes.indexOf(backend.language))
+                            onActivated: index => backend.setLanguage(codes[index])
+                        }
+                    }
+                }
 
                 Repeater {
                     model: backend.settingGroups
@@ -111,7 +156,9 @@ Item {
                                     Label {
                                         Layout.fillWidth: true
                                         wrapMode: Text.WordWrap
-                                        text: parent.result ? parent.result.text : "Uses the values above, even before saving."
+                                        text: parent.result
+                                            ? page.t(parent.result.text)
+                                            : page.t("Uses the values above, even before saving.")
                                         color: parent.result ? (parent.result.ok ? page.goodColor : page.badColor) : palette.windowText
                                         opacity: parent.result ? 1 : 0.7
                                     }

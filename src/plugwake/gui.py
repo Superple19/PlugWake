@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Property, QObject, QThread, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, QSettings, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
@@ -25,6 +25,7 @@ from .actions import (
     test_rdp_host,
 )
 from .config import FIELDS, ROOT, Config, config_from_values, load_config, load_env, save_env
+from .i18n import LANGUAGE_CHOICES, TRANSLATIONS, resolve, translate
 from .theme import enable_mica, follow_color_scheme, mica_supported
 
 QML_DIR = Path(__file__).with_name("qml")
@@ -173,10 +174,12 @@ class Backend(QObject):
     dirtyChanged = Signal()
     noticeChanged = Signal()
     testResultsChanged = Signal()
+    languageChanged = Signal()
 
-    def __init__(self) -> None:
+    def __init__(self, language: str = "en") -> None:
         super().__init__()
-        self._status = "Ready"
+        self._language = language if language in LANGUAGE_CHOICES else "system"
+        self._status: tuple[str, str] = ("Ready", "")
         self._running = False
         self._cancelling = False
         self._label = ""
@@ -184,7 +187,7 @@ class Backend(QObject):
         self._values: dict[str, str] = {}
         self._saved: dict[str, str] = {}
         self._dirty = False
-        self._notice: dict[str, object] = {"text": "", "error": False}
+        self._notice: tuple[str, dict[str, str], bool] = ("", {}, False)
         self._test_results: dict[str, dict[str, object]] = {}
         self._test_id = ""
         self._last_line = ""
@@ -193,8 +196,12 @@ class Backend(QObject):
         self._poll_timer: QTimer | None = None
         self.loadSettings()
 
+    def tr(self, text: str, **values: str) -> str:
+        return translate(resolve(self._language), text, **values)
+
     def _get_status(self) -> str:
-        return self._status
+        template, label = self._status
+        return self.tr(template, label=self.tr(label))
 
     def _get_running(self) -> bool:
         return self._running
@@ -212,7 +219,14 @@ class Backend(QObject):
         return self._dirty
 
     def _get_notice(self) -> dict[str, object]:
-        return self._notice
+        template, values, error = self._notice
+        return {"text": self.tr(template, **values) if template else "", "error": error}
+
+    def _get_language(self) -> str:
+        return self._language
+
+    def _get_strings(self) -> dict[str, str]:
+        return TRANSLATIONS[resolve(self._language)]
 
     def _get_test_results(self) -> dict[str, dict[str, object]]:
         return self._test_results
@@ -220,14 +234,14 @@ class Backend(QObject):
     def _get_setting_groups(self) -> list[dict]:
         return [
             {
-                "title": title,
+                "title": self.tr(title),
                 "test": test,
-                "testLabel": ACTIONS[test][0] if test else "",
+                "testLabel": self.tr(ACTIONS[test][0]) if test else "",
                 "fields": [
                     {
                         "key": key,
-                        "label": SETTINGS[key][0],
-                        "description": SETTINGS[key][1],
+                        "label": self.tr(SETTINGS[key][0]),
+                        "description": self.tr(SETTINGS[key][1]),
                         "kind": SETTINGS[key][2],
                         "placeholder": PLACEHOLDERS.get(key, ""),
                         "choices": CHOICES.get(key, []),
@@ -239,6 +253,8 @@ class Backend(QObject):
         ]
 
     status = Property(str, _get_status, notify=statusChanged)
+    language = Property(str, _get_language, notify=languageChanged)
+    strings = Property("QVariantMap", _get_strings, notify=languageChanged)
     running = Property(bool, _get_running, notify=runningChanged)
     cancelling = Property(bool, _get_cancelling, notify=cancellingChanged)
     pcStatus = Property("QVariantMap", _get_pc_status, notify=pcStatusChanged)
@@ -246,14 +262,23 @@ class Backend(QObject):
     dirty = Property(bool, _get_dirty, notify=dirtyChanged)
     notice = Property("QVariantMap", _get_notice, notify=noticeChanged)
     testResults = Property("QVariantMap", _get_test_results, notify=testResultsChanged)
-    settingGroups = Property("QVariantList", _get_setting_groups, constant=True)
+    settingGroups = Property("QVariantList", _get_setting_groups, notify=languageChanged)
 
     def log(self, text: str) -> None:
         self.logLine.emit(f"[{timestamp()}] {text}")
 
-    def _set_status(self, text: str) -> None:
-        self._status = text
+    def _set_status(self, template: str, label: str = "") -> None:
+        self._status = (template, label)
         self.statusChanged.emit()
+
+    @Slot(str)
+    def setLanguage(self, language: str) -> None:
+        if language not in LANGUAGE_CHOICES or language == self._language:
+            return
+        self._language = language
+        self.languageChanged.emit()
+        self.statusChanged.emit()
+        self.noticeChanged.emit()
 
     def _set_running(self, running: bool) -> None:
         self._running = running
@@ -265,11 +290,12 @@ class Backend(QObject):
 
     @Slot(str, result=str)
     def confirmText(self, action_id: str) -> str:
-        return ACTIONS[action_id][3]
+        text = ACTIONS[action_id][3]
+        return self.tr(text) if text else ""
 
     @Slot(str, result=str)
     def actionLabel(self, action_id: str) -> str:
-        return ACTIONS[action_id][0]
+        return self.tr(ACTIONS[action_id][0])
 
     @Slot(str)
     def run(self, action_id: str) -> None:
@@ -280,7 +306,7 @@ class Backend(QObject):
             config = load_config()
         except RuntimeError as exc:
             self.log(f"Error: {exc}")
-            self._set_status(f"{label} failed")
+            self._set_status("{label} failed", label)
             return
         self._start(action_id, config)
 
@@ -307,7 +333,7 @@ class Backend(QObject):
         self._label = label
         self._last_line = ""
         self.log(f"Running {label}.")
-        self._set_status(f"Running {label}")
+        self._set_status("Running {label}", label)
         if needs_password:
             worker = ActionWorker(lambda log: action(config, log, worker.prompt_password))
         else:
@@ -331,13 +357,13 @@ class Backend(QObject):
         self._worker.token.cancel()
         self._set_cancelling(True)
         self.log("Cancel requested. Stopping at the next safe point.")
-        self._set_status(f"Cancelling {self._label}")
+        self._set_status("Cancelling {label}", self._label)
 
     @Slot(int)
     def _on_done(self, code: int) -> None:
         outcome = {0: "completed", 2: "cancelled"}.get(code, "failed")
         self.log(f"{self._label} {outcome}.")
-        self._set_status(f"{self._label} {outcome}")
+        self._set_status("{label} " + outcome, self._label)
         if self._test_id:
             result = self._last_line.removeprefix("Error: ").rstrip(".") or outcome
             self._set_test_result(self._test_id, result, code == 0)
@@ -382,8 +408,8 @@ class Backend(QObject):
             self._dirty = dirty
             self.dirtyChanged.emit()
 
-    def _set_notice(self, text: str, error: bool = False) -> None:
-        self._notice = {"text": text, "error": error}
+    def _set_notice(self, template: str, error: bool = False, **values: str) -> None:
+        self._notice = (template, values, error)
         self.noticeChanged.emit()
 
     @Slot()
@@ -404,7 +430,7 @@ class Backend(QObject):
         try:
             config_from_values(values)
         except RuntimeError as exc:
-            self._set_notice(f"Not saved: {exc}", error=True)
+            self._set_notice("Not saved: {reason}", error=True, reason=str(exc))
             return
         save_env(values)
         self._values = values
@@ -439,7 +465,9 @@ def main() -> None:
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon)))
 
-    backend = Backend()
+    preferences = QSettings("PlugWake", "PlugWake")
+    backend = Backend(language=str(preferences.value("language", "system")))
+    backend.languageChanged.connect(lambda: preferences.setValue("language", backend.language))
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("micaRequested", mica)

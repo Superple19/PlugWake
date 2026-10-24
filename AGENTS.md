@@ -16,12 +16,13 @@ Core responsibilities:
 
 ## Safety Rules
 
-- Never commit `.env`, Home Assistant tokens, SSH passwords, hostnames, Tailnet names, local IPs, or real entity IDs.
+- Never commit `.env`, Home Assistant tokens, SSH passwords, real or private hostnames, Tailnet names, local IPs, or real entity IDs.
 - Never store SSH passwords in files, docs, logs, examples, or config defaults.
 - Do not add automatic OS switching or one-time Linux boot controls by default.
 - Do not cut smart plug power while wattage is above the configured threshold.
 - Remote Off must shut down through the OS first, then require repeated low-power confirmation before plug cutoff.
-- If Home Assistant, SSH, RDP, or the power sensor fails, prefer doing nothing over cutting power.
+- If Home Assistant, SSH, or the power sensor fails, prefer doing nothing over cutting power.
+- Remote On may power-cycle an on plug when RDP is unreachable and repeated low-power readings indicate that the target PC is off.
 
 ## Public Defaults
 
@@ -76,7 +77,7 @@ uv run plugwake-cli reboot
 uv run plugwake-cli hard-reboot
 uv run plugwake-cli test-ha
 uv run plugwake-cli test-rdp
-uv run plugwake-cli setup-shortcuts
+uv run plugwake-cli setup-shortcuts  # Windows only
 ```
 
 ## Commit Style

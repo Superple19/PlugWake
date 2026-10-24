@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
 
         for label, fn in [
             ("Test Home Assistant", lambda: self.run_action("Test Home Assistant", test_home_assistant)),
-            ("Test RDP Host", lambda: self.run_action("Test RDP Host", test_rdp_host)),
+            ("Test RDP Port", lambda: self.run_action("Test RDP Port", test_rdp_host)),
         ]:
             button = QPushButton(label)
             button.clicked.connect(fn)

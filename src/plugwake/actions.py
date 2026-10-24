@@ -86,9 +86,9 @@ def test_home_assistant(config: Config, log: Log) -> None:
 def test_rdp_host(config: Config, log: Log) -> None:
     require_config(config, ["rdp_host"])
     if tcp_open(config.rdp_host, 3389, timeout=5):
-        log(f"{config.rdp_host}:3389 is reachable.")
+        log(f"RDP port 3389 on {config.rdp_host} is reachable.")
     else:
-        log(f"{config.rdp_host}:3389 is not reachable within 5 seconds.")
+        log(f"RDP port 3389 on {config.rdp_host} is not reachable within 5 seconds.")
 
 
 def tailscale_connected() -> bool | None:

@@ -79,12 +79,14 @@ install_uv.bat
 uv sync
 ```
 
-Linux/macOS:
+Linux:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync
 ```
+
+macOS is not currently supported as a client because RDP launch is implemented for Windows and Linux.
 
 3. Copy `.env.example` to `.env`.
 4. Fill in your Home Assistant URL, token, entity IDs, RDP host, SSH target, and target OS.
@@ -144,7 +146,7 @@ uv run plugwake-cli off
 uv run plugwake-cli reboot
 uv run plugwake-cli hard-reboot
 uv run plugwake-cli test-ha
-uv run plugwake-cli test-rdp
+uv run plugwake-cli test-rdp  # checks TCP port 3389 only
 ```
 
 Development checks:
@@ -156,6 +158,7 @@ uv run ruff format --check .
 ```
 
 `reboot` sends an OS reboot over SSH. `hard-reboot` shuts the OS down, waits for low power, power-cycles the plug, then opens RDP.
+`test-rdp` checks whether TCP port 3389 is reachable; it does not perform an RDP login.
 
 Windows shortcut setup:
 
@@ -176,7 +179,8 @@ bash setup_shortcuts.sh
 - Failed SSH shutdowns do not cut plug power.
 - Invalid or unavailable power sensor readings do not cut plug power.
 - Remote Off waits for repeated low-power readings before switching the plug off.
-- If Home Assistant, SSH, RDP, or the power sensor fails, PlugWake prefers doing nothing over cutting power.
+- If Home Assistant, SSH, or the power sensor fails, PlugWake prefers doing nothing over cutting power.
+- When the plug is on, RDP is unreachable, and low power is repeatedly confirmed, Remote On power-cycles the plug to start the PC.
 
 ## Files
 

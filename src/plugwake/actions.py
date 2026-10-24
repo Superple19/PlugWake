@@ -62,6 +62,12 @@ class ActionFailed(RuntimeError):
     pass
 
 
+def require_plug_state(state: str) -> str:
+    if state not in {"on", "off"}:
+        raise ActionFailed(f"Invalid smart plug state: {state}")
+    return state
+
+
 def tcp_open(host: str, port: int, timeout: float = 3) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -166,7 +172,7 @@ def remote_on(config: Config, log: Log) -> None:
 
     ha = HomeAssistant(config)
     log(f"Reading plug state: {config.plug_entity}")
-    plug = ha.state(config.plug_entity)
+    plug = require_plug_state(ha.state(config.plug_entity))
     log(f"Reading power sensor: {config.watt_entity}")
     watt = ha.watt()
     log(f"Plug={plug}, Power={watt:g} W")
@@ -214,7 +220,7 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
 
     ha = HomeAssistant(config)
     log(f"Reading plug state: {config.plug_entity}")
-    plug = ha.state(config.plug_entity)
+    plug = require_plug_state(ha.state(config.plug_entity))
     log(f"Reading power sensor: {config.watt_entity}")
     watt = ha.watt()
     log(f"Plug={plug}, Power={watt:g} W")
@@ -263,7 +269,20 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
 
     log(f"Decision: power is below {config.power_threshold_w:g} W, so turning plug off.")
     ha.set_plug("off")
+    if not wait_for_plug_state(ha, config, "off", log):
+        log("Smart plug did not confirm the off state. Not continuing.")
+        return False
     return True
+
+
+def wait_for_plug_state(ha: HomeAssistant, config: Config, expected: str, log: Log) -> bool:
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if ha.state(config.plug_entity) == expected:
+            return True
+        time.sleep(1)
+    log(f"Smart plug did not reach state {expected} within 15 seconds.")
+    return False
 
 
 def url_host(url: str) -> str:
@@ -342,7 +361,7 @@ def connect_ssh(
     username, host = parse_ssh_target(target)
     client = paramiko.SSHClient()
     client.load_system_host_keys()
-    client.set_missing_host_key_policy(paramiko.WarningPolicy())
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     try:
         client.connect(hostname=host, username=username or None, timeout=10, auth_timeout=15)

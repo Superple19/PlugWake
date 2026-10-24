@@ -46,6 +46,14 @@ PlugWake talks to Home Assistant over its REST API and uses SSH/RDP to reach the
 - Home Assistant REST API: <https://developers.home-assistant.io/docs/api/rest/>
 - Home Assistant long-lived access tokens: <https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token>
 
+PlugWake rejects SSH servers that are not already in the client's known-hosts file. Verify the target fingerprint once with your system SSH client before using Remote Off or Reboot:
+
+```bash
+ssh user@target-pc
+```
+
+Only accept the fingerprint if it matches the target PC. OpenSSH stores the verified key in `~/.ssh/known_hosts` on Linux/macOS and in `%USERPROFILE%\.ssh\known_hosts` on Windows.
+
 Tailscale is optional, but it is a convenient way to keep Home Assistant and the target PC reachable without exposing them publicly. MagicDNS lets you use names like `ha-server` instead of Tailscale IP addresses.
 
 - Tailscale: <https://tailscale.com/>

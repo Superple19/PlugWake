@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,6 +68,23 @@ def save_env(values: dict[str, str]) -> None:
 
 def load_config() -> Config:
     values = load_env()
+    try:
+        power_threshold_w = float(values.get("POWER_THRESHOLD_W", "5"))
+        rdp_wait_seconds = int(values.get("RDP_WAIT_SECONDS", "180"))
+        power_on_low_confirmations = int(values.get("POWER_ON_LOW_CONFIRMATIONS", "3"))
+        power_off_low_confirmations = int(values.get("POWER_OFF_LOW_CONFIRMATIONS", "4"))
+    except ValueError as exc:
+        raise RuntimeError("Numeric settings in .env are invalid") from exc
+
+    if not math.isfinite(power_threshold_w) or power_threshold_w < 0:
+        raise RuntimeError("POWER_THRESHOLD_W must be a finite non-negative number")
+    if rdp_wait_seconds <= 0:
+        raise RuntimeError("RDP_WAIT_SECONDS must be greater than zero")
+    if power_on_low_confirmations < 1:
+        raise RuntimeError("POWER_ON_LOW_CONFIRMATIONS must be at least 1")
+    if power_off_low_confirmations < 1:
+        raise RuntimeError("POWER_OFF_LOW_CONFIRMATIONS must be at least 1")
+
     return Config(
         ha_url=values.get("HA_URL", "").rstrip("/"),
         ha_token=values.get("HA_TOKEN", ""),
@@ -75,8 +93,8 @@ def load_config() -> Config:
         rdp_host=values.get("RDP_HOST", ""),
         ssh_target=values.get("PC_SSH_TARGET", ""),
         target_os=values.get("TARGET_OS", "windows").strip().lower(),
-        power_threshold_w=float(values.get("POWER_THRESHOLD_W", "5")),
-        rdp_wait_seconds=int(values.get("RDP_WAIT_SECONDS", "180")),
-        power_on_low_confirmations=int(values.get("POWER_ON_LOW_CONFIRMATIONS", "3")),
-        power_off_low_confirmations=int(values.get("POWER_OFF_LOW_CONFIRMATIONS", "4")),
+        power_threshold_w=power_threshold_w,
+        rdp_wait_seconds=rdp_wait_seconds,
+        power_on_low_confirmations=power_on_low_confirmations,
+        power_off_low_confirmations=power_off_low_confirmations,
     )

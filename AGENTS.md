@@ -41,7 +41,7 @@ Use only public-safe placeholder values in committed files:
 Before committing code changes, run the smallest relevant checks:
 
 ```bat
-.venv\Scripts\python.exe -m py_compile src\plugwake\config.py src\plugwake\actions.py src\plugwake\cli.py src\plugwake\gui.py
+.venv\Scripts\python.exe -m py_compile src\plugwake\config.py src\plugwake\actions.py src\plugwake\cli.py src\plugwake\gui.py src\plugwake\theme.py
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -27,87 +28,12 @@ from PySide6.QtWidgets import (
 
 from .actions import remote_hard_reboot, remote_off, remote_on, remote_reboot, test_home_assistant, test_rdp_host
 from .config import FIELDS, ROOT, load_config, load_env, save_env
+from .theme import apply_theme, enable_mica
 
 
 def timestamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
-
-STYLE = """
-QWidget {
-  background: #171717;
-  color: #f5f5f5;
-  font-size: 10pt;
-}
-QTabBar::tab {
-  background: #222222;
-  border: 1px solid #3a3a3a;
-  border-bottom: none;
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
-  padding: 8px 14px;
-}
-QTabBar::tab:selected {
-  background: #2b2b2b;
-}
-QTabWidget::pane {
-  border: 1px solid #3a3a3a;
-  background: #171717;
-}
-QGroupBox {
-  background: #1f1f1f;
-  border: 1px solid #3a3a3a;
-  border-radius: 6px;
-  margin-top: 12px;
-  padding: 10px;
-}
-QGroupBox::title {
-  subcontrol-origin: margin;
-  left: 10px;
-  padding: 0 4px;
-}
-QPushButton {
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  border-radius: 6px;
-  color: #f5f5f5;
-  padding: 8px 12px;
-}
-QPushButton:hover {
-  background: #333333;
-}
-QPushButton#primaryOn {
-  background: #238636;
-  border-color: #2ea043;
-  color: #ffffff;
-  font-weight: 600;
-}
-QPushButton#primaryOff {
-  background: #da3633;
-  border-color: #f85149;
-  color: #ffffff;
-  font-weight: 600;
-}
-QPushButton#danger {
-  border-color: #f85149;
-  color: #ff7b72;
-}
-QPushButton#danger:hover {
-  background: #3d1d1d;
-}
-QLineEdit, QComboBox, QPlainTextEdit {
-  background: #111827;
-  border: 1px solid #374151;
-  border-radius: 4px;
-  color: #f9fafb;
-  padding: 6px;
-}
-QPlainTextEdit {
-  background: #0f172a;
-  color: #e5e7eb;
-  font-family: Consolas, monospace;
-}
-"""
 
 PLACEHOLDERS = {
     "HA_URL": "http://ha.example.local:8123",
@@ -155,16 +81,16 @@ class ActionWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+        self.setObjectName("mainWindow")
         self.setWindowTitle("PlugWake")
         icon = ROOT / "assets" / "icons" / "plugwake.png"
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
         self.resize(780, 560)
-        self.setStyleSheet(STYLE)
         self.inputs: dict[str, QLineEdit | QComboBox] = {}
         self.worker: QThread | None = None
         self.status = QLabel("Ready")
-        self.status.setStyleSheet("font-weight: 600; padding: 4px 0;")
+        self.status.setObjectName("status")
 
         tabs = QTabWidget()
         tabs.addTab(self._control_tab(), "Control")
@@ -293,7 +219,11 @@ class MainWindow(QMainWindow):
         buttons.addWidget(reset_button)
         layout.addLayout(buttons)
         layout.addStretch()
-        return root
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(root)
+        return scroll
 
     def _settings_group(self, title: str, keys: list[str]) -> QGroupBox:
         group = QGroupBox(title)
@@ -379,6 +309,9 @@ def main() -> None:
     os.chdir(ROOT)
     app = QApplication(sys.argv)
     window = MainWindow()
+    mica = enable_mica(window)
+    apply_theme(app, window, mica)
+    app.styleHints().colorSchemeChanged.connect(lambda _scheme: apply_theme(app, window, mica))
     window.show()
     raise SystemExit(app.exec())
 

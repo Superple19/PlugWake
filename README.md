@@ -163,6 +163,8 @@ uv sync
 uv run plugwake
 ```
 
+The GUI follows the system light or dark theme and switches live when it changes. On Windows 11 22H2 or later it uses the Mica window backdrop; elsewhere it uses a solid background.
+
 CLI:
 
 ```bash

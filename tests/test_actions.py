@@ -314,7 +314,7 @@ def test_open_rdp_fails_when_host_never_comes_online(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(actions.time, "monotonic", iter([0, 0, 2]).__next__)
     monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(actions.ActionFailed, match="did not come online"):
+    with pytest.raises(actions.ActionFailed, match="was not ready within"):
         actions.open_rdp(make_config(rdp_wait_seconds=1), lambda _message: None)
 
 
@@ -323,3 +323,44 @@ def test_test_rdp_host_fails_when_port_is_closed(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(actions.ActionFailed, match="not reachable"):
         actions.test_rdp_host(make_config(), lambda _message: None)
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [(401, "rejected the token"), (404, "entity not found: switch.smart_plug"), (500, "HTTP 500")],
+)
+def test_home_assistant_http_errors_are_explained(monkeypatch: pytest.MonkeyPatch, code: int, message: str) -> None:
+    def urlopen(request: object, timeout: float) -> None:
+        raise actions.urllib.error.HTTPError("http://ha", code, "reason", {}, None)
+
+    monkeypatch.setattr(actions.urllib.request, "urlopen", urlopen)
+
+    with pytest.raises(actions.ActionFailed, match=message):
+        actions.HomeAssistant(make_config()).state("switch.smart_plug")
+
+
+def test_remote_on_continues_when_tailscale_is_disconnected(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config()
+    lines: list[str] = []
+    rdp_opened: list[bool] = []
+
+    monkeypatch.setattr(actions, "tailscale_connected", lambda: False)
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(actions.HomeAssistant, "state", lambda _self, _entity: "on")
+    monkeypatch.setattr(actions.HomeAssistant, "watt", lambda _self: 60.0)
+    monkeypatch.setattr(actions, "open_rdp", lambda *_args, **_kwargs: rdp_opened.append(True))
+
+    actions.remote_on(config, lines.append)
+
+    assert any(line.startswith("Warning: Tailscale is not connected") for line in lines)
+    assert rdp_opened == [True]
+
+
+def test_remote_on_mentions_tailscale_when_home_assistant_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(actions, "tailscale_connected", lambda: False)
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: False)
+
+    with pytest.raises(actions.ActionFailed, match="Tailscale is also not connected"):
+        actions.remote_on(make_config(), lambda _message: None)

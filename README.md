@@ -61,7 +61,7 @@ ssh user@target-pc
 
 Only accept the fingerprint if it matches the target PC. OpenSSH stores the verified key in `~/.ssh/known_hosts` on Linux/macOS and in `%USERPROFILE%\.ssh\known_hosts` on Windows.
 
-Tailscale is optional, but it is a convenient way to keep Home Assistant and the target PC reachable without exposing them publicly. MagicDNS lets you use names like `target-pc` instead of Tailscale IP addresses.
+Tailscale is optional, but it is a convenient way to keep Home Assistant and the target PC reachable without exposing them publicly. MagicDNS lets you use names like `target-pc` instead of Tailscale IP addresses. If the Tailscale CLI is installed but disconnected, Remote On logs a warning and continues; it stops only when Home Assistant itself is unreachable.
 
 - Tailscale: <https://tailscale.com/>
 - Tailscale MagicDNS: <https://tailscale.com/docs/features/magicdns>

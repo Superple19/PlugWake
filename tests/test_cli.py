@@ -17,3 +17,20 @@ def test_cli_off_exits_with_error_when_plug_power_is_not_cut(monkeypatch: pytest
         cli.main()
 
     assert exc.value.code == 1
+
+
+def test_cli_reports_config_errors_without_traceback(monkeypatch: pytest.MonkeyPatch) -> None:
+    lines: list[str] = []
+
+    def broken_config() -> None:
+        raise RuntimeError("RDP_WAIT_SECONDS must be greater than zero")
+
+    monkeypatch.setattr(sys, "argv", ["plugwake-cli", "on"])
+    monkeypatch.setattr(cli, "load_config", broken_config)
+    monkeypatch.setattr(cli, "log", lines.append)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 1
+    assert lines == ["Error: RDP_WAIT_SECONDS must be greater than zero"]

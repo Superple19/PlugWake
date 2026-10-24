@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
@@ -40,11 +41,23 @@ class HomeAssistant:
                 "Content-Type": "application/json",
             },
         )
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return json.loads(response.read().decode("utf-8") or "{}")
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return json.loads(response.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                raise ActionFailed("Home Assistant rejected the token (HTTP 401). Check HA_TOKEN") from None
+            raise ActionFailed(f"Home Assistant request failed (HTTP {exc.code} {exc.reason})") from None
+        except urllib.error.URLError as exc:
+            raise ActionFailed(f"Home Assistant is not reachable ({exc.reason})") from None
 
     def state(self, entity: str) -> str:
-        return str(self.request(f"/api/states/{entity}")["state"])
+        try:
+            return str(self.request(f"/api/states/{entity}")["state"])
+        except ActionFailed as exc:
+            if "HTTP 404" in str(exc):
+                raise ActionFailed(f"Home Assistant entity not found: {entity}") from None
+            raise
 
     def watt(self) -> float:
         state = self.state(self.config.watt_entity)
@@ -142,21 +155,19 @@ def open_rdp(config: Config, log: Log) -> None:
         log(f"RDP is already open for {config.rdp_host}.")
         return
 
-    log(f"Waiting for {config.rdp_host} to come online.")
-    deadline = time.monotonic() + config.rdp_wait_seconds
-    attempt = 1
-    while time.monotonic() < deadline:
+    log(f"Waiting for RDP on {config.rdp_host}. Checking every 5 seconds.")
+    start = time.monotonic()
+    while (elapsed := time.monotonic() - start) < config.rdp_wait_seconds:
         if tcp_open(config.rdp_host, 3389):
             command = rdp_command(config.rdp_host)
             if command is None:
                 raise ActionFailed("No supported RDP client was found. Install FreeRDP on Linux")
-            log(f"{config.rdp_host} is online. Opening RDP.")
+            log(f"RDP on {config.rdp_host} is ready. Opening RDP.")
             subprocess.Popen(command)
             return
-        log(f"{config.rdp_host} is not ready yet. Retrying in 5 seconds. Attempt {attempt}.")
-        attempt += 1
+        log(f"RDP on {config.rdp_host} not ready ({elapsed:.0f}/{config.rdp_wait_seconds} s).")
         time.sleep(5)
-    raise ActionFailed(f"{config.rdp_host} did not come online within {config.rdp_wait_seconds} seconds")
+    raise ActionFailed(f"RDP on {config.rdp_host} was not ready within {config.rdp_wait_seconds} seconds")
 
 
 def rdp_command(host: str) -> list[str] | None:
@@ -175,11 +186,13 @@ def remote_on(config: Config, log: Log) -> None:
 
     tailscale = tailscale_connected()
     if tailscale is False:
-        raise ActionFailed("Tailscale is not connected")
+        log("Warning: Tailscale is not connected. Continuing in case Home Assistant is reachable without it.")
     if tailscale is None:
-        log("Tailscale CLI was not found. Skipping direct Tailscale check.")
+        log("Tailscale CLI was not found. Skipping Tailscale check.")
 
     if not tcp_open(url_host(config.ha_url), url_port(config.ha_url)):
+        if tailscale is False:
+            raise ActionFailed("Home Assistant is not reachable. Tailscale is also not connected")
         raise ActionFailed("Home Assistant is not reachable")
 
     ha = HomeAssistant(config)
@@ -187,7 +200,7 @@ def remote_on(config: Config, log: Log) -> None:
     plug = require_plug_state(ha.state(config.plug_entity))
     log(f"Reading power sensor: {config.watt_entity}")
     watt = ha.watt()
-    log(f"Plug={plug}, Power={watt:g} W")
+    log(f"Plug {plug}, power {watt:g} W.")
 
     if plug == "off":
         log("Decision: plug is off, so turning it on.")
@@ -200,23 +213,25 @@ def remote_on(config: Config, log: Log) -> None:
         open_rdp(config, log)
         return
 
-    log(f"Decision: plug is on but power is below {config.power_threshold_w:g} W. Watching for sustained low power.")
+    log(
+        f"Decision: plug is on but power is below {config.power_threshold_w:g} W. "
+        "Checking for sustained low power every 5 seconds."
+    )
     if tcp_open(config.rdp_host, 3389):
         log(f"{config.rdp_host} is online despite low power. Treating PC as already on.")
         open_rdp(config, log)
         return
 
     low_count = 1
-    log(f"Low power confirmation {low_count}/{config.power_on_low_confirmations}.")
+    log(f"Power {watt:g} W, low ({low_count}/{config.power_on_low_confirmations}).")
     while low_count < config.power_on_low_confirmations:
         time.sleep(5)
         watt = ha.watt()
-        log(f"Power={watt:g} W")
         if watt < config.power_threshold_w:
             low_count += 1
-            log(f"Low power confirmation {low_count}/{config.power_on_low_confirmations}.")
+            log(f"Power {watt:g} W, low ({low_count}/{config.power_on_low_confirmations}).")
         else:
-            log("Power recovered. PC is already on.")
+            log(f"Power {watt:g} W, recovered. PC is already on.")
             open_rdp(config, log)
             return
 
@@ -235,7 +250,7 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
     plug = require_plug_state(ha.state(config.plug_entity))
     log(f"Reading power sensor: {config.watt_entity}")
     watt = ha.watt()
-    log(f"Plug={plug}, Power={watt:g} W")
+    log(f"Plug {plug}, power {watt:g} W.")
 
     if plug == "off":
         log("Decision: plug is already off.")
@@ -246,37 +261,39 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
         if not ssh_shutdown(config, log, password_prompt):
             raise ActionFailed("SSH shutdown failed")
 
-        log(f"SSH shutdown sent. Waiting for power to drop below {config.power_threshold_w:g} W.")
-        deadline = time.monotonic() + config.shutdown_wait_seconds
+        log(
+            f"SSH shutdown sent. Waiting for power to drop below {config.power_threshold_w:g} W. "
+            "Checking every 5 seconds."
+        )
+        start = time.monotonic()
         low_count = 0
-        while time.monotonic() < deadline:
+        while time.monotonic() - start < config.shutdown_wait_seconds:
             time.sleep(5)
+            elapsed = time.monotonic() - start
             watt = ha.watt()
-            log(f"Power={watt:g} W")
             if watt < config.power_threshold_w:
                 low_count += 1
-                log(f"Low power confirmation {low_count}/{config.power_off_low_confirmations}.")
+                log(f"Power {watt:g} W, low ({low_count}/{config.power_off_low_confirmations}).")
                 if low_count >= config.power_off_low_confirmations:
-                    log(f"Power stayed below {config.power_threshold_w:g} W.")
                     break
             else:
                 low_count = 0
+                log(f"Power {watt:g} W, waiting for shutdown ({elapsed:.0f}/{config.shutdown_wait_seconds} s).")
 
         if low_count < config.power_off_low_confirmations:
             log("Timed out waiting for shutdown. Not cutting power.")
             return False
     else:
         low_count = 1
-        log(f"Low power confirmation {low_count}/{config.power_off_low_confirmations}.")
+        log(f"Power {watt:g} W, low ({low_count}/{config.power_off_low_confirmations}).")
         while low_count < config.power_off_low_confirmations:
             time.sleep(5)
             watt = ha.watt()
-            log(f"Power={watt:g} W")
             if watt < config.power_threshold_w:
                 low_count += 1
-                log(f"Low power confirmation {low_count}/{config.power_off_low_confirmations}.")
+                log(f"Power {watt:g} W, low ({low_count}/{config.power_off_low_confirmations}).")
             else:
-                log("Power recovered. Not cutting power.")
+                log(f"Power {watt:g} W, recovered. Not cutting power.")
                 return False
 
     log(f"Decision: power is below {config.power_threshold_w:g} W, so turning plug off.")
@@ -448,7 +465,7 @@ def connect_ssh(
             return client, password
         except paramiko.AuthenticationException:
             client.close()
-            log(f"SSH password authentication failed. Attempt {attempt}/3.")
+            log(f"SSH password authentication failed ({attempt}/3).")
         except Exception as exc:
             client.close()
             log(f"SSH password authentication failed: {exc}")

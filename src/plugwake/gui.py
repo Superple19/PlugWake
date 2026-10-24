@@ -345,7 +345,12 @@ class MainWindow(QMainWindow):
         if confirm and QMessageBox.question(self, label, confirm) != QMessageBox.StandardButton.Yes:
             return
 
-        config = load_config()
+        try:
+            config = load_config()
+        except RuntimeError as exc:
+            self.append_log(f"Error: {exc}")
+            self.status.setText(f"{label} failed")
+            return
         self.append_log(f"Running {label}.")
         self.status.setText(f"Running {label}")
         if needs_password:

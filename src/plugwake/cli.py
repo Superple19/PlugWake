@@ -31,8 +31,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = load_config()
     try:
+        config = load_config()
         if args.command == "setup-shortcuts":
             setup_shortcuts()
         elif args.command == "on":

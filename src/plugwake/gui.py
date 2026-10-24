@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Property, QObject, QThread, QUrl, Signal, Slot
+from PySide6.QtCore import Property, QObject, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
@@ -16,6 +16,7 @@ from .actions import (
     ActionCancelled,
     CancelToken,
     cancellable,
+    read_status,
     remote_hard_reboot,
     remote_off,
     remote_on,
@@ -27,6 +28,7 @@ from .config import FIELDS, ROOT, load_config, load_env, save_env
 from .theme import enable_mica, follow_color_scheme, mica_supported
 
 QML_DIR = Path(__file__).with_name("qml")
+STATUS_POLL_MS = 15_000
 
 # id: (label, action, needs_password, confirmation)
 ACTIONS: dict[str, tuple[str, Callable, bool, str]] = {
@@ -118,12 +120,25 @@ class ActionWorker(QThread):
         return self.password
 
 
+class StatusProbe(QThread):
+    result = Signal("QVariantMap")
+
+    def run(self) -> None:
+        try:
+            status = read_status(load_config())
+        except Exception as exc:
+            status = {"plug": "", "watt": None, "rdp": None, "error": str(exc)}
+        status["updated"] = timestamp()
+        self.result.emit(status)
+
+
 class Backend(QObject):
     logLine = Signal(str)
     passwordRequested = Signal(str)
     statusChanged = Signal()
     runningChanged = Signal()
     cancellingChanged = Signal()
+    pcStatusChanged = Signal()
     valuesChanged = Signal()
 
     def __init__(self) -> None:
@@ -134,6 +149,9 @@ class Backend(QObject):
         self._label = ""
         self._worker: ActionWorker | None = None
         self._values: dict[str, str] = {}
+        self._pc_status: dict[str, object] = {"plug": "", "watt": None, "rdp": None, "error": "", "updated": ""}
+        self._probe: StatusProbe | None = None
+        self._poll_timer: QTimer | None = None
         self.loadSettings()
 
     def _get_status(self) -> str:
@@ -144,6 +162,9 @@ class Backend(QObject):
 
     def _get_cancelling(self) -> bool:
         return self._cancelling
+
+    def _get_pc_status(self) -> dict[str, object]:
+        return self._pc_status
 
     def _get_values(self) -> dict[str, str]:
         return self._values
@@ -168,6 +189,7 @@ class Backend(QObject):
     status = Property(str, _get_status, notify=statusChanged)
     running = Property(bool, _get_running, notify=runningChanged)
     cancelling = Property(bool, _get_cancelling, notify=cancellingChanged)
+    pcStatus = Property("QVariantMap", _get_pc_status, notify=pcStatusChanged)
     values = Property("QVariantMap", _get_values, notify=valuesChanged)
     settingGroups = Property("QVariantList", _get_setting_groups, constant=True)
 
@@ -241,6 +263,27 @@ class Backend(QObject):
         self._set_cancelling(False)
         self._set_running(False)
 
+    def startStatusPolling(self) -> None:
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(STATUS_POLL_MS)
+        self._poll_timer.timeout.connect(self.refreshStatus)
+        self._poll_timer.start()
+        self.refreshStatus()
+
+    @Slot()
+    def refreshStatus(self) -> None:
+        if self._probe is not None and self._probe.isRunning():
+            return
+        probe = StatusProbe()
+        probe.result.connect(self._on_status)
+        self._probe = probe
+        probe.start()
+
+    @Slot("QVariantMap")
+    def _on_status(self, status: dict[str, object]) -> None:
+        self._pc_status = status
+        self.pcStatusChanged.emit()
+
     @Slot(str, bool)
     def providePassword(self, password: str, ok: bool) -> None:
         if self._worker is not None:
@@ -263,6 +306,8 @@ class Backend(QObject):
     def saveSettings(self) -> None:
         save_env({key: self._values.get(key, "").strip() for key in FIELDS})
         self.log("Saved .env.")
+        if self._poll_timer is not None:
+            self.refreshStatus()
 
     @Slot()
     def resetDefaults(self) -> None:
@@ -296,6 +341,7 @@ def main() -> None:
         raise SystemExit(1)
 
     window = engine.rootObjects()[0]
+    backend.startStatusPolling()
     if mica and not enable_mica(window):
         window.setProperty("micaActive", False)
     follow_color_scheme(app, window)

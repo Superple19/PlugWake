@@ -94,3 +94,18 @@ def test_backend_cancel_stops_a_running_action(monkeypatch: pytest.MonkeyPatch) 
 
     assert backend.running is False
     assert backend.status == "Remote On cancelled"
+
+
+def test_status_probe_reports_invalid_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    results: list[dict] = []
+
+    def broken_config() -> None:
+        raise RuntimeError("PLUG_OFF_SECONDS must be greater than zero")
+
+    monkeypatch.setattr(gui, "load_config", broken_config)
+    probe = gui.StatusProbe()
+    probe.result.connect(results.append)
+    probe.run()
+
+    assert results[0]["error"] == "PLUG_OFF_SECONDS must be greater than zero"
+    assert results[0]["updated"]

@@ -495,3 +495,31 @@ def test_cancel_during_power_cycle_still_turns_plug_back_on(monkeypatch: pytest.
         actions.remote_on(config, lambda _message: None)
 
     assert events == ["plug off", "plug on"]
+
+
+def test_read_status_reports_plug_power_and_rdp(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config()
+    fake_plug(monkeypatch, [42.5])
+
+    assert actions.read_status(config) == {"plug": "on", "watt": 42.5, "rdp": True, "error": ""}
+
+
+def test_read_status_skips_home_assistant_when_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: False)
+
+    status = actions.read_status(make_config(ha_token=""))
+
+    assert status == {"plug": "", "watt": None, "rdp": False, "error": "Home Assistant is not configured"}
+
+
+def test_read_status_keeps_rdp_result_when_home_assistant_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    def state(_self: actions.HomeAssistant, _entity: str) -> str:
+        raise actions.ActionFailed("Home Assistant is not reachable (timed out)")
+
+    monkeypatch.setattr(actions.HomeAssistant, "state", state)
+
+    status = actions.read_status(make_config())
+
+    assert status["rdp"] is True
+    assert status["plug"] == ""
+    assert status["error"] == "Home Assistant is not reachable (timed out)"

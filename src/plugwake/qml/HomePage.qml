@@ -24,44 +24,87 @@ Item {
         Frame {
             Layout.fillWidth: true
 
-            RowLayout {
+            ColumnLayout {
                 anchors.fill: parent
                 spacing: 12
 
-                Item {
-                    visible: backend.running
-                    Layout.preferredWidth: 32
-                    Layout.maximumWidth: 32
-                    Layout.preferredHeight: 32
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 16
 
-                    BusyIndicator {
-                        anchors.fill: parent
-                        padding: 0
-                        running: backend.running
+                    StatusTile {
+                        readonly property string plug: backend.pcStatus.plug || ""
+
+                        title: "Smart plug"
+                        known: plug !== ""
+                        good: plug === "on"
+                        value: plug === "on" ? "On" : plug === "off" ? "Off" : "Unknown"
+                    }
+                    StatusTile {
+                        readonly property var watt: backend.pcStatus.watt
+
+                        title: "Power"
+                        known: false
+                        value: watt === null || watt === undefined ? "Unknown" : Number(watt).toFixed(1) + " W"
+                    }
+                    StatusTile {
+                        readonly property var rdp: backend.pcStatus.rdp
+
+                        title: "Remote desktop"
+                        known: rdp === true || rdp === false
+                        good: rdp === true
+                        value: rdp === true ? "Ready" : rdp === false ? "Not reachable" : "Unknown"
                     }
                 }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
 
-                    Label {
-                        Layout.fillWidth: true
-                        text: "Status"
-                        opacity: 0.7
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 1
+                    color: palette.windowText
+                    opacity: 0.12
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Item {
+                        visible: backend.running
+                        Layout.preferredWidth: 24
+                        Layout.maximumWidth: 24
+                        Layout.preferredHeight: 24
+
+                        BusyIndicator {
+                            anchors.fill: parent
+                            padding: 0
+                            running: backend.running
+                        }
                     }
                     Label {
                         Layout.fillWidth: true
                         text: backend.status
-                        font.pixelSize: 16
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                     }
-                }
-                Button {
-                    visible: backend.running
-                    enabled: !backend.cancelling
-                    text: backend.cancelling ? "Cancelling..." : "Cancel"
-                    onClicked: backend.cancel()
+                    Label {
+                        Layout.maximumWidth: 260
+                        opacity: 0.7
+                        elide: Text.ElideRight
+                        text: backend.pcStatus.error
+                            ? backend.pcStatus.error
+                            : backend.pcStatus.updated ? "Updated " + backend.pcStatus.updated : "Checking..."
+                    }
+                    Button {
+                        text: "Refresh"
+                        flat: true
+                        onClicked: backend.refreshStatus()
+                    }
+                    Button {
+                        visible: backend.running
+                        enabled: !backend.cancelling
+                        text: backend.cancelling ? "Cancelling..." : "Cancel"
+                        onClicked: backend.cancel()
+                    }
                 }
             }
         }

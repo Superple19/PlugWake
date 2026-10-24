@@ -165,6 +165,8 @@ uv run plugwake
 
 The GUI is built with Qt Quick and the [FluentWinUI3 style](https://doc.qt.io/qt-6/qtquickcontrols-fluentwinui3.html) that ships with Qt 6.8 and later. It follows the system light or dark theme and accent color. On Windows 11 22H2 or later it uses the Mica window backdrop and renders with OpenGL so the backdrop shows through; elsewhere it uses a solid background.
 
+The Home page shows the smart plug state, current power, and whether RDP port 3389 answers. It refreshes every 15 seconds in the background and only reads; it never switches the plug.
+
 CLI:
 
 ```bash

@@ -161,6 +161,23 @@ def tcp_open(host: str, port: int, timeout: float = 3) -> bool:
         return False
 
 
+def read_status(config: Config) -> dict[str, object]:
+    """Read plug, power, and RDP state for the GUI status card. Never changes anything."""
+    status: dict[str, object] = {"plug": "", "watt": None, "rdp": None, "error": ""}
+    if config.rdp_host.strip():
+        status["rdp"] = tcp_open(config.rdp_host, 3389, timeout=2)
+    if not all(getattr(config, name).strip() for name in ("ha_url", "ha_token", "plug_entity", "watt_entity")):
+        status["error"] = "Home Assistant is not configured"
+        return status
+    ha = HomeAssistant(config)
+    try:
+        status["plug"] = require_plug_state(ha.state(config.plug_entity))
+        status["watt"] = ha.watt()
+    except RuntimeError as exc:
+        status["error"] = str(exc)
+    return status
+
+
 def test_home_assistant(config: Config, log: Log) -> None:
     require_config(config, ["ha_url", "ha_token"])
     HomeAssistant(config).request("/api/")

@@ -19,6 +19,7 @@ def make_config(**overrides: object) -> Config:
         "target_os": "windows",
         "power_threshold_w": 5.0,
         "rdp_wait_seconds": 1,
+        "shutdown_wait_seconds": 300,
         "power_on_low_confirmations": 3,
         "power_off_low_confirmations": 3,
     }
@@ -183,3 +184,117 @@ def test_windows_rdp_detection_does_not_interpolate_host_into_powershell(
     environment = captured["kwargs"]["env"]
     assert host not in command
     assert environment["PLUGWAKE_RDP_HOST"] == host
+
+
+class FakeClient:
+    def __init__(self, fail_password: bool = False) -> None:
+        self.policy = None
+        self.closed = False
+        self.fail_password = fail_password
+
+    def load_system_host_keys(self) -> None:
+        pass
+
+    def set_missing_host_key_policy(self, policy: object) -> None:
+        self.policy = policy
+
+    def connect(self, **kwargs: object) -> None:
+        if "password" not in kwargs or self.fail_password:
+            raise actions.paramiko.AuthenticationException("auth failed")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_connect_ssh_uses_a_new_client_for_each_password_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    clients = [FakeClient(), FakeClient(fail_password=True), FakeClient()]
+    created = list(clients)
+    monkeypatch.setattr(actions.paramiko, "SSHClient", lambda: created.pop(0))
+    passwords = iter(["wrong", "right"])
+
+    connected, password = actions.connect_ssh("user@target-pc", lambda _message: None, lambda _target: next(passwords))
+
+    assert connected is clients[2]
+    assert password == "right"
+    assert clients[0].closed and clients[1].closed and not clients[2].closed
+
+
+def fake_power_ssh(
+    monkeypatch: pytest.MonkeyPatch, password: str | None, codes: list[int]
+) -> list[tuple[str, str | None]]:
+    commands: list[tuple[str, str | None]] = []
+    client = FakeClient()
+
+    def exec_ssh(_client: object, command: str, _log: object, stdin_text: str | None = None) -> int:
+        commands.append((command, stdin_text))
+        return codes.pop(0)
+
+    monkeypatch.setattr(actions, "connect_ssh", lambda *_args: (client, password))
+    monkeypatch.setattr(actions, "exec_ssh", exec_ssh)
+    return commands
+
+
+def test_linux_power_command_skips_password_prompt_when_sudo_needs_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(target_os="linux")
+    commands = fake_power_ssh(monkeypatch, None, [0])
+    prompts: list[str] = []
+
+    def prompt(target: str) -> str:
+        prompts.append(target)
+        return "secret"
+
+    assert actions.ssh_shutdown(config, lambda _message: None, prompt) is True
+    assert commands == [("sudo -n systemctl poweroff", None)]
+    assert prompts == []
+
+
+def test_linux_power_command_prompts_when_sudo_requires_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(target_os="linux")
+    commands = fake_power_ssh(monkeypatch, None, [1, 0])
+
+    assert actions.ssh_shutdown(config, lambda _message: None, lambda _target: "secret") is True
+    assert commands == [
+        ("sudo -n systemctl poweroff", None),
+        ("sudo -S -p '' systemctl poweroff", "secret"),
+    ]
+
+
+def test_linux_power_command_reuses_ssh_password_for_sudo(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(target_os="linux")
+    commands = fake_power_ssh(monkeypatch, "secret", [0])
+
+    assert actions.ssh_shutdown(config, lambda _message: None, None) is True
+    assert commands == [("sudo -S -p '' systemctl poweroff", "secret")]
+
+
+@pytest.mark.parametrize(("code", "sent"), [(0, True), (actions.SSH_NO_EXIT_STATUS, True), (1, False)])
+def test_power_command_treats_dropped_connection_as_sent(
+    monkeypatch: pytest.MonkeyPatch, code: int, sent: bool
+) -> None:
+    config = make_config(target_os="windows")
+    fake_power_ssh(monkeypatch, None, [code])
+
+    assert actions.ssh_shutdown(config, lambda _message: None, None) is sent
+
+
+def test_remote_on_stops_when_plug_does_not_confirm_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config()
+    plug_actions: list[str] = []
+    rdp_opened: list[bool] = []
+
+    def state(_self: actions.HomeAssistant, entity: str) -> str:
+        return "off" if entity == config.plug_entity else "0"
+
+    monkeypatch.setattr(actions, "tailscale_connected", lambda: True)
+    monkeypatch.setattr(actions, "tcp_open", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(actions.HomeAssistant, "state", state)
+    monkeypatch.setattr(actions.HomeAssistant, "set_plug", lambda _self, state: plug_actions.append(state))
+    monkeypatch.setattr(actions, "open_rdp", lambda *_args, **_kwargs: rdp_opened.append(True))
+    monkeypatch.setattr(actions.time, "monotonic", iter([0, 16]).__next__)
+    monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(actions.ActionFailed, match="did not confirm the on state"):
+        actions.remote_on(config, lambda _message: None)
+
+    assert plug_actions == ["on"]
+    assert rdp_opened == []

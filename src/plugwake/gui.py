@@ -111,6 +111,7 @@ PLACEHOLDERS = {
     "PC_SSH_TARGET": "user@target-pc",
     "POWER_THRESHOLD_W": "5",
     "RDP_WAIT_SECONDS": "180",
+    "SHUTDOWN_WAIT_SECONDS": "300",
     "POWER_ON_LOW_CONFIRMATIONS": "3",
     "POWER_OFF_LOW_CONFIRMATIONS": "4",
 }
@@ -260,7 +261,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(
             self._settings_group(
                 "Power Safety",
-                ["POWER_THRESHOLD_W", "RDP_WAIT_SECONDS", "POWER_ON_LOW_CONFIRMATIONS", "POWER_OFF_LOW_CONFIRMATIONS"],
+                [
+                    "POWER_THRESHOLD_W",
+                    "RDP_WAIT_SECONDS",
+                    "SHUTDOWN_WAIT_SECONDS",
+                    "POWER_ON_LOW_CONFIRMATIONS",
+                    "POWER_OFF_LOW_CONFIRMATIONS",
+                ],
             )
         )
 

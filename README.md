@@ -108,6 +108,7 @@ PC_SSH_TARGET=user@target-pc
 TARGET_OS=windows
 POWER_THRESHOLD_W=5
 RDP_WAIT_SECONDS=180
+SHUTDOWN_WAIT_SECONDS=300
 POWER_ON_LOW_CONFIRMATIONS=3
 POWER_OFF_LOW_CONFIRMATIONS=4
 ```
@@ -117,11 +118,16 @@ Use `TARGET_OS=windows` for Windows hosts and `TARGET_OS=linux` for Linux hosts.
 Linux target hosts use:
 
 ```text
-sudo -S systemctl poweroff
-sudo -S systemctl reboot
+sudo -n systemctl poweroff
+sudo -n systemctl reboot
 ```
 
-The SSH user must be allowed to run those commands with sudo.
+The SSH user must be allowed to run those commands with sudo. With a `NOPASSWD`
+sudoers rule for those commands, no password is requested. Otherwise PlugWake asks
+for the sudo password and retries with `sudo -S`.
+
+`SHUTDOWN_WAIT_SECONDS` is how long Remote Off waits for power to drop after the
+shutdown command before giving up without cutting power.
 
 ## Usage
 

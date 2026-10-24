@@ -19,6 +19,8 @@ from .config import Config
 Log = Callable[[str], None]
 PasswordPrompt = Callable[[str], str | None]
 
+SSH_NO_EXIT_STATUS = -1
+
 
 class HomeAssistant:
     def __init__(self, config: Config) -> None:
@@ -193,7 +195,7 @@ def remote_on(config: Config, log: Log) -> None:
 
     if plug == "off":
         log("Decision: plug is off, so turning it on.")
-        ha.set_plug("on")
+        turn_plug_on(ha, config, log)
         open_rdp(config, log)
         return
 
@@ -225,7 +227,7 @@ def remote_on(config: Config, log: Log) -> None:
     log(f"Decision: power stayed below {config.power_threshold_w:g} W, so power cycling plug.")
     ha.set_plug("off")
     time.sleep(3)
-    ha.set_plug("on")
+    turn_plug_on(ha, config, log)
     open_rdp(config, log)
 
 
@@ -249,7 +251,7 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
             raise ActionFailed("SSH shutdown failed")
 
         log(f"SSH shutdown sent. Waiting for power to drop below {config.power_threshold_w:g} W.")
-        deadline = time.monotonic() + 300
+        deadline = time.monotonic() + config.shutdown_wait_seconds
         low_count = 0
         while time.monotonic() < deadline:
             time.sleep(5)
@@ -289,6 +291,12 @@ def remote_off(config: Config, log: Log, password_prompt: PasswordPrompt | None 
     return True
 
 
+def turn_plug_on(ha: HomeAssistant, config: Config, log: Log) -> None:
+    ha.set_plug("on")
+    if not wait_for_plug_state(ha, config, "on", log):
+        raise ActionFailed("Smart plug did not confirm the on state")
+
+
 def wait_for_plug_state(ha: HomeAssistant, config: Config, expected: str, log: Log) -> bool:
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
@@ -324,15 +332,14 @@ def parse_ssh_target(target: str) -> tuple[str, str]:
 
 
 def ssh_shutdown(config: Config, log: Log, password_prompt: PasswordPrompt | None) -> bool:
-    result = run_ssh_command(config, shutdown_command(config), log, password_prompt)
-    return result == 0
+    return run_power_command(config, shutdown_command(config), log, password_prompt)
 
 
 def shutdown_command(config: Config) -> str:
     if config.target_os == "windows":
         return "shutdown /s /t 0"
     if config.target_os == "linux":
-        return "sudo -S -p '' systemctl poweroff"
+        return "systemctl poweroff"
     raise RuntimeError(f"Unsupported TARGET_OS: {config.target_os}")
 
 
@@ -340,92 +347,123 @@ def reboot_command(config: Config) -> str:
     if config.target_os == "windows":
         return "shutdown /r /t 0"
     if config.target_os == "linux":
-        return "sudo -S -p '' systemctl reboot"
+        return "systemctl reboot"
     raise RuntimeError(f"Unsupported TARGET_OS: {config.target_os}")
 
 
-def run_ssh_command(config: Config, command: str, log: Log, password_prompt: PasswordPrompt | None) -> int | None:
+def run_power_command(config: Config, command: str, log: Log, password_prompt: PasswordPrompt | None) -> bool:
     client, password = connect_ssh(config.ssh_target, log, password_prompt)
     if client is None:
-        return None
+        return False
 
     try:
-        stdin, stdout, stderr = client.exec_command(command)
-        if config.target_os == "linux":
-            if password is None and password_prompt is not None:
-                password = password_prompt(config.ssh_target)
-            if password:
-                stdin.write(password + "\n")
-                stdin.flush()
-            stdin.channel.shutdown_write()
-        output = stdout.read().decode("utf-8", errors="replace").strip()
-        error = stderr.read().decode("utf-8", errors="replace").strip()
-        if output:
-            log(output)
-        if error:
-            log(error)
-        return stdout.channel.recv_exit_status()
+        if config.target_os != "linux":
+            return power_command_sent(exec_ssh(client, command, log), log)
+
+        if password is None:
+            code = exec_ssh(client, f"sudo -n {command}", log)
+            if code in {0, SSH_NO_EXIT_STATUS}:
+                return power_command_sent(code, log)
+            if password_prompt is None:
+                log("sudo requires a password, but password prompt is unavailable for this command.")
+                return False
+            log("sudo requires a password.")
+            password = password_prompt(config.ssh_target)
+            if not password:
+                log("sudo password was not provided.")
+                return False
+
+        return power_command_sent(exec_ssh(client, f"sudo -S -p '' {command}", log, password), log)
     finally:
         client.close()
+
+
+def power_command_sent(code: int, log: Log) -> bool:
+    if code == SSH_NO_EXIT_STATUS:
+        log("SSH connection closed before an exit status was returned. Assuming the command was sent.")
+        return True
+    return code == 0
+
+
+def exec_ssh(client: paramiko.SSHClient, command: str, log: Log, stdin_text: str | None = None) -> int:
+    stdin, stdout, stderr = client.exec_command(command)
+    if stdin_text is not None:
+        stdin.write(stdin_text + "\n")
+        stdin.flush()
+    stdin.channel.shutdown_write()
+    output = stdout.read().decode("utf-8", errors="replace").strip()
+    error = stderr.read().decode("utf-8", errors="replace").strip()
+    if output:
+        log(output)
+    if error:
+        log(error)
+    return stdout.channel.recv_exit_status()
+
+
+def new_ssh_client() -> paramiko.SSHClient:
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    return client
 
 
 def connect_ssh(
     target: str, log: Log, password_prompt: PasswordPrompt | None
 ) -> tuple[paramiko.SSHClient | None, str | None]:
     username, host = parse_ssh_target(target)
-    client = paramiko.SSHClient()
-    client.load_system_host_keys()
-    client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    client = new_ssh_client()
 
     try:
         client.connect(hostname=host, username=username or None, timeout=10, auth_timeout=15)
+        return client, None
     except (paramiko.AuthenticationException, paramiko.SSHException) as exc:
+        client.close()
         if "No authentication methods available" not in str(exc) and not isinstance(
             exc, paramiko.AuthenticationException
         ):
             log(f"SSH connection failed: {exc}")
             return None, None
-
-        if password_prompt is None:
-            log("SSH authentication failed. Password prompt is unavailable for this command.")
-            return None, None
-
-        for attempt in range(1, 4):
-            password = password_prompt(target)
-            if not password:
-                log("SSH password was not provided.")
-                return None, None
-
-            try:
-                client.connect(
-                    hostname=host,
-                    username=username or None,
-                    password=password,
-                    timeout=10,
-                    auth_timeout=15,
-                    look_for_keys=False,
-                    allow_agent=False,
-                )
-                break
-            except paramiko.AuthenticationException:
-                log(f"SSH password authentication failed. Attempt {attempt}/3.")
-                if attempt == 3:
-                    return None, None
-            except Exception as exc:
-                log(f"SSH password authentication failed: {exc}")
-                return None, None
     except Exception as exc:
+        client.close()
         log(f"SSH connection failed: {exc}")
         return None, None
 
-    return client, locals().get("password")
+    if password_prompt is None:
+        log("SSH authentication failed. Password prompt is unavailable for this command.")
+        return None, None
+
+    for attempt in range(1, 4):
+        password = password_prompt(target)
+        if not password:
+            log("SSH password was not provided.")
+            return None, None
+
+        client = new_ssh_client()
+        try:
+            client.connect(
+                hostname=host,
+                username=username or None,
+                password=password,
+                timeout=10,
+                auth_timeout=15,
+                look_for_keys=False,
+                allow_agent=False,
+            )
+            return client, password
+        except paramiko.AuthenticationException:
+            client.close()
+            log(f"SSH password authentication failed. Attempt {attempt}/3.")
+        except Exception as exc:
+            client.close()
+            log(f"SSH password authentication failed: {exc}")
+            return None, None
+    return None, None
 
 
 def remote_reboot(config: Config, log: Log, password_prompt: PasswordPrompt | None = None) -> None:
     require_config(config, ["ssh_target"])
     log(f"Rebooting remote PC over SSH: {config.ssh_target}")
-    code = run_ssh_command(config, reboot_command(config), log, password_prompt)
-    if code != 0:
+    if not run_power_command(config, reboot_command(config), log, password_prompt):
         raise ActionFailed("Failed to reboot remote PC")
 
 
@@ -434,5 +472,5 @@ def remote_hard_reboot(config: Config, log: Log, password_prompt: PasswordPrompt
     if not remote_off(config, log, password_prompt):
         raise ActionFailed("Remote shutdown was not confirmed")
     log("Turning plug back on.")
-    HomeAssistant(config).set_plug("on")
+    turn_plug_on(HomeAssistant(config), config, log)
     open_rdp(config, log)

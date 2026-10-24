@@ -17,6 +17,7 @@ FIELDS = [
     "TARGET_OS",
     "POWER_THRESHOLD_W",
     "RDP_WAIT_SECONDS",
+    "SHUTDOWN_WAIT_SECONDS",
     "POWER_ON_LOW_CONFIRMATIONS",
     "POWER_OFF_LOW_CONFIRMATIONS",
 ]
@@ -25,6 +26,7 @@ DEFAULTS = {
     "TARGET_OS": "windows",
     "POWER_THRESHOLD_W": "5",
     "RDP_WAIT_SECONDS": "180",
+    "SHUTDOWN_WAIT_SECONDS": "300",
     "POWER_ON_LOW_CONFIRMATIONS": "3",
     "POWER_OFF_LOW_CONFIRMATIONS": "4",
 }
@@ -41,6 +43,7 @@ class Config:
     target_os: str
     power_threshold_w: float
     rdp_wait_seconds: int
+    shutdown_wait_seconds: int
     power_on_low_confirmations: int
     power_off_low_confirmations: int
 
@@ -71,6 +74,7 @@ def load_config() -> Config:
     try:
         power_threshold_w = float(values.get("POWER_THRESHOLD_W", "5"))
         rdp_wait_seconds = int(values.get("RDP_WAIT_SECONDS", "180"))
+        shutdown_wait_seconds = int(values.get("SHUTDOWN_WAIT_SECONDS", "300"))
         power_on_low_confirmations = int(values.get("POWER_ON_LOW_CONFIRMATIONS", "3"))
         power_off_low_confirmations = int(values.get("POWER_OFF_LOW_CONFIRMATIONS", "4"))
     except ValueError as exc:
@@ -80,6 +84,8 @@ def load_config() -> Config:
         raise RuntimeError("POWER_THRESHOLD_W must be a finite non-negative number")
     if rdp_wait_seconds <= 0:
         raise RuntimeError("RDP_WAIT_SECONDS must be greater than zero")
+    if shutdown_wait_seconds <= 0:
+        raise RuntimeError("SHUTDOWN_WAIT_SECONDS must be greater than zero")
     if power_on_low_confirmations < 1:
         raise RuntimeError("POWER_ON_LOW_CONFIRMATIONS must be at least 1")
     if power_off_low_confirmations < 1:
@@ -95,6 +101,7 @@ def load_config() -> Config:
         target_os=values.get("TARGET_OS", "windows").strip().lower(),
         power_threshold_w=power_threshold_w,
         rdp_wait_seconds=rdp_wait_seconds,
+        shutdown_wait_seconds=shutdown_wait_seconds,
         power_on_low_confirmations=power_on_low_confirmations,
         power_off_low_confirmations=power_off_low_confirmations,
     )

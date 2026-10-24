@@ -43,9 +43,12 @@ Item {
                         readonly property bool hasWatt: watt !== null && watt !== undefined
 
                         title: page.t("Smart plug")
-                        known: plug !== ""
-                        // Green only when the plug is on and the PC is drawing running power.
-                        good: plug === "on" && pcRunning === true
+                        // Warn when power reaches the plug but the PC is off or asleep.
+                        tone: plug === "off" ? "off"
+                            : plug !== "on" ? ""
+                            : pcRunning === true ? "good"
+                            : pcRunning === false ? "warn"
+                            : "off"
                         value: plug === "off" ? page.t("Off")
                             : plug !== "on" ? page.t("Unknown")
                             : !hasWatt ? page.t("On")
@@ -56,8 +59,11 @@ Item {
                         readonly property var rdp: backend.pcStatus.rdp
 
                         title: page.t("Remote desktop")
-                        known: rdp === true || rdp === false
-                        good: rdp === true
+                        // Warn when the PC draws running power but RDP does not answer.
+                        tone: rdp === true ? "good"
+                            : rdp !== false ? ""
+                            : backend.pcStatus.pc_running === true ? "warn"
+                            : "off"
                         value: page.t(rdp === true ? "Ready" : rdp === false ? "Not reachable" : "Unknown")
                     }
                 }

@@ -167,6 +167,8 @@ The GUI is built with Qt Quick and the [FluentWinUI3 style](https://doc.qt.io/qt
 
 The Home page shows the smart plug state with its current power, for example `On (134.6 W)`, and whether RDP port 3389 answers. When the plug is on but power is below `POWER_THRESHOLD_W`, it shows `PC off`. It refreshes in the background every 15 seconds by default; change or turn this off in Settings → App → Status refresh. The Refresh button always works. It only reads and never switches the plug.
 
+Status dots: green means everything is up. Orange needs attention: the plug is on but the PC is off or asleep, or the PC is running but RDP does not answer. Gray means plainly off.
+
 The GUI is available in English and Korean. Settings → App → Language follows the system language by default and switches right away. The choice is stored as a per-user app preference, not in `.env`. Log lines stay in English.
 
 CLI:

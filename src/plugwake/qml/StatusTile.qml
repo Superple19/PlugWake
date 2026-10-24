@@ -7,10 +7,15 @@ ColumnLayout {
 
     property string title
     property string value
-    property bool known: true
-    property bool good: false
+    // good: all on, warn: needs attention, off: plainly off, empty: unknown (no dot)
+    property string tone: ""
 
     readonly property bool dark: Application.styleHints.colorScheme === Qt.Dark
+    readonly property var toneColors: ({
+            "good": dark ? "#6ccb5f" : "#0f7b0f",
+            "warn": dark ? "#ffa94d" : "#c25e00",
+            "off": dark ? "#9d9d9d" : "#8a8a8a"
+        })
 
     Layout.fillWidth: true
     spacing: 4
@@ -26,11 +31,11 @@ ColumnLayout {
         spacing: 8
 
         Rectangle {
-            visible: tile.known
+            visible: tile.tone !== ""
             width: 10
             height: 10
             radius: 5
-            color: tile.good ? (tile.dark ? "#6ccb5f" : "#0f7b0f") : (tile.dark ? "#9d9d9d" : "#8a8a8a")
+            color: tile.toneColors[tile.tone] || "transparent"
         }
         Label {
             Layout.fillWidth: true

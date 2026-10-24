@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
 import socket
 import subprocess
@@ -101,25 +102,38 @@ def tailscale_connected() -> bool | None:
 
 
 def rdp_is_open(host: str) -> bool:
-    if not shutil.which("powershell"):
-        return False
-    command = (
-        "Get-CimInstance Win32_Process -Filter \"name = 'mstsc.exe'\" "
-        f"| Where-Object {{ $_.CommandLine -like '*{host}*' }}"
-    )
-    result = subprocess.run(
-        [
-            "powershell",
-            "-NoProfile",
-            "-Command",
-            command,
-        ],
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    return bool(result.stdout.strip())
+    if sys.platform == "win32":
+        if not shutil.which("powershell"):
+            return False
+        command = (
+            "$hostName = [Environment]::GetEnvironmentVariable('PLUGWAKE_RDP_HOST'); "
+            "Get-CimInstance Win32_Process -Filter \"name = 'mstsc.exe'\" "
+            "| Where-Object { $_.CommandLine -like ('*' + $hostName + '*') }"
+        )
+        environment = os.environ.copy()
+        environment["PLUGWAKE_RDP_HOST"] = host
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", command],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+        )
+        return bool(result.stdout.strip())
+
+    if sys.platform.startswith("linux") and shutil.which("pgrep"):
+        for process in ["xfreerdp", "xfreerdp3"]:
+            result = subprocess.run(
+                ["pgrep", "-af", process],
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if any(host in line for line in result.stdout.splitlines()):
+                return True
+    return False
 
 
 def open_rdp(config: Config, log: Log) -> None:

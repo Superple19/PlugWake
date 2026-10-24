@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from plugwake import actions
@@ -146,3 +148,38 @@ def test_connect_ssh_rejects_unknown_host_keys(monkeypatch: pytest.MonkeyPatch) 
 
     assert connected is client
     assert isinstance(client.policy, actions.paramiko.RejectPolicy)
+
+
+def test_linux_rdp_detection_finds_existing_freerdp(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(actions.sys, "platform", "linux")
+    monkeypatch.setattr(actions.shutil, "which", lambda command: "/usr/bin/pgrep" if command == "pgrep" else None)
+    monkeypatch.setattr(
+        actions.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="1234 xfreerdp /v:target-pc\n", returncode=0),
+    )
+
+    assert actions.rdp_is_open("target-pc") is True
+
+
+def test_windows_rdp_detection_does_not_interpolate_host_into_powershell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    host = "target'; Write-Output 'unexpected"
+
+    monkeypatch.setattr(actions.sys, "platform", "win32")
+    monkeypatch.setattr(actions.shutil, "which", lambda _command: "powershell.exe")
+
+    def run(*args: object, **kwargs: object) -> SimpleNamespace:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(stdout="", returncode=0)
+
+    monkeypatch.setattr(actions.subprocess, "run", run)
+
+    assert actions.rdp_is_open(host) is False
+    command = captured["args"][0][3]
+    environment = captured["kwargs"]["env"]
+    assert host not in command
+    assert environment["PLUGWAKE_RDP_HOST"] == host

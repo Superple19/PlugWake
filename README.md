@@ -42,6 +42,8 @@ sudo pacman -S freerdp
 
 PlugWake talks to Home Assistant over its REST API and uses SSH/RDP to reach the target PC. Home Assistant must already be set up with a smart plug switch entity and a power sensor entity.
 
+The HA token is sent as a Bearer token on every API request. Use an `https://` Home Assistant URL when the connection crosses an untrusted network. If using `http://`, keep Home Assistant on a trusted LAN or private Tailscale network and never expose port 8123 publicly.
+
 - Home Assistant: <https://www.home-assistant.io/>
 - Home Assistant REST API: <https://developers.home-assistant.io/docs/api/rest/>
 - Home Assistant long-lived access tokens: <https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token>
@@ -148,6 +150,7 @@ uv run plugwake-cli test-rdp
 Development checks:
 
 ```bash
+uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
